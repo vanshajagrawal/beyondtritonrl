@@ -1,0 +1,143 @@
+\documentclass[11pt]{article}
+
+% -------------------- Packages --------------------
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{authblk}
+\usepackage{xurl}
+\urlstyle{same}
+
+% -------------------- Title -----------------------
+\begin{document}
+
+\title{Beyond TritonRL: SOTA-Oriented Triton Kernel Generation via Fusion-Centric Data, Hardened Verification, and Adaptive Curriculum\\[0.8em]
+\large MS CSE Project Report}
+\author[1]{Vanshaj Agrawal}
+\affil[1]{Pennsylvania State University, MS CSE}
+\affil[ ]{\small Partially done while collaborating with colleagues at Carnegie Mellon University}
+\affil[ ]{\small Work in Progress}
+\date{}
+\maketitle
+
+\begin{abstract}
+We target \emph{state-of-the-art} (SOTA) Triton kernel generation beyond the TritonRL baseline, with a practical focus on \textbf{fused kernels} (KernelBench Level-2). We retain TritonRL's high-level recipe---\emph{verifier-gated} RL with \emph{hierarchical credit assignment} between planning and code---and introduce four upgrades that close known gaps: (1) a \textbf{fusion-centric training set} (programmatically generated and verified) that stresses Conv${\to}$BN${\to}$ReLU, GEMM${\to}$bias${\to}$activation, LN${\to}$GELU, and other common fusions; (2) a \textbf{Hardened Verifier~2.0} combining static linting, strict sandboxing (3) \textbf{ Curriculum Learning for training} that routes training between L1 and L2 type training samples . All experiments use the base model as \textbf{Qwen3-7B} for compactness and fair comparisons. We report KernelBench L1/2 Validity/Compiled/Correct/Speedup and pass@k, with ablations for each upgrade.
+\end{abstract}
+
+% -------------------- Overview --------------------
+\section{Introduction}
+High-performance Triton kernels remain hard for 7B-scale models, especially under \textbf{fusion} where signals are sparser and speedups are fragile. TritonRL recently set a strong baseline with verifier-gated, hierarchical RL, but left important practical gaps: reliable timing, multi-input robustness, and dynamic difficulty scheduling for L2. This project aims to \emph{improve} SOTA by addressing these gaps directly.
+
+\paragraph{Contributions.} Over the TritonRL recipe, we contribute:
+\begin{itemize}[leftmargin=*,itemsep=4pt]
+  \item \textbf{Fusion-centric data.} We construct fused-op tasks programmatically (via \texttt{torch.fx} graphs and templates) across shapes/dtypes/layouts, with \emph{per-task} PyTorch references and tight anti-cheat constraints.
+  \item \textbf{Hardened Verifier~2.0.} (i) Static AST linter for Triton usage; (ii) \emph{strict import sandbox} and syscall isolation; (iii) \emph{multi-input \& type} tests (shape/dtype/value perturbations); (iv) \emph{GPU-event gating} (kernel launched, nontrivial occupancy/bytes moved); (v) \emph{calibrated timing}: warmups, device sync, repeated trials, outlier-trimmed means.
+  \item \textbf{Adaptive curriculum (capacity-aware).} An explicit schedule $p(t)$ that shifts sampling mass from L1 to L2 as correctness stabilizes, and a staged reward that gradually increases the speed threshold once correctness plateaus.
+\end{itemize}
+
+\subsection{TritonRL in Brief and Its Limitations}
+\label{sec:tritonrl-brief}
+\paragraph{Approach.}
+TritonRL trains a student LLM to emit a short \emph{plan} (tiling, layout, fusion order) followed by \emph{Triton code}. It uses (i) \textbf{SFT} on (instruction, plan, code) triples, then (ii) \textbf{RL} with \emph{verifier-gated} rewards and \emph{hierarchical credit assignment}: most credit goes to code tokens for \textbf{correctness}, with a smaller speed bonus; plan tokens receive a small speed-aligned signal so plan updates are gradual. The RL optimizer follows a GRPO/PPO-style update with KL control and small plan weight $\alpha$.
+
+\paragraph{Verifier (baseline).}
+Before any reward, candidates must pass a gate: (1) \textbf{syntax/\texttt{@triton.jit}} and basic kernel structure checks; (2) \textbf{anti-cheat} rules and an LLM judge to reject PyTorch fallbacks, no-ops, or hard-coded outputs. Passing candidates are then
+(i) \textbf{compiled}, (ii) \textbf{run} to check output equality to a PyTorch reference (typically on a single test input), and (iii) \textbf{timed} to compute a bounded speedup score.
+
+\paragraph{Limitations that motivate our work.}
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Single-input correctness} is brittle for fused ops; models can overfit to one shape/value regime.
+  \item \textbf{Timing noise} (warmup effects, caching, outliers) can mis-rank candidates and destabilize RL.
+  \item \textbf{Static L1/L2 mixing} underuses capacity: L2 remains underexposed early and over-penalized later.
+  \item \textbf{Verifier cost} is high if expensive timing runs are attempted on low-quality code.
+  \item \textbf{Kernel Fusion emphasis} is implicit; a dedicated \emph{fusion-first} dataset/policy is not spelled out.
+  \item \textbf{Sandboxing specifics} (imports/syscalls, GPU “real work” checks) can be tightened to shrink exploit surface.
+\end{itemize}
+
+% -------------------- Method --------------------
+\section{Method}
+\subsection{Outputs and Hierarchical Credit (kept)}
+Each output consists of a short \textbf{plan} (few lines: tiling, memory layout, fusion order) and \textbf{kernel code}. We maintain hierarchical credit assignment (GRPO-style); our changes lie downstream in data, verification, and scheduling.
+
+\subsection{Fusion-Centric Data Generation}
+We synthesize fused tasks by:
+\begin{enumerate}[leftmargin=2em,itemsep=2pt]
+  \item Extracting common patterns (\texttt{Conv$\to$BN$\to$ReLU}, \texttt{GEMM$\to$bias$\to$act}, \texttt{LN$\to$GELU}) via \texttt{torch.fx}/templates.
+  \item Enumerating shapes/dtypes/layouts that stress memory traffic and tile choices.
+  \item Emitting a \textbf{non-cheating reference} (\texttt{PyTorch}) and a \textbf{strict Triton prompt}.
+\end{enumerate}
+Tasks are labeled (L1/L2/L3) to support curriculum sampling.
+
+\subsection{Hardened Verifier~2.0}
+We gate candidates through:
+\begin{description}[leftmargin=1.7em,itemsep=2pt]
+  \item[Static validity.] AST lint: presence of \texttt{@triton.jit}, real kernel body, kernel invocation, disallow \texttt{torch.nn}, tensor constants shortcutting, forbidden imports.
+  \item[Secure sandbox.] Restricted python env, no file/network, monkey-patched \texttt{torch} fallbacks, syscall filters.
+  \item[Correctness (robust).] \emph{Multi-input} suite per task: randomized shapes (when legal), values, dtypes; \emph{metamorphic} invariances (e.g., scaling, permutes) where applicable.
+  \item[Speed (calibrated).] Warmups, explicit device sync, $N$ timed trials with \emph{trimmed mean} and CI; separate tiny- and full-batch regimes to avoid cache\slash cold-start confounds.
+  \item[GPU-event gating.] Require nontrivial FLOPs/bytes and at least one successful kernel launch; optional roofline sanity bands.
+\end{description}
+
+\subsection{Adaptive Curriculum and Reward Shaping}
+Let $p_t=\Pr[\text{L2} \mid t]$. We start with small $p_0$ and increase $p_t$ once pass@k-correct (L1) stabilizes. The reward uses the same hierarchical split, but the speed component switches from tolerant to strict over training:
+\[
+r = \textsf{valid}\cdot\big(\beta\cdot \textsf{correct} + (1-\beta)\cdot \textsf{rank\_speed}\big),
+\]
+where \textsf{rank\_speed} is a pairwise, noise-robust rank (winsorized), preventing outlier timing from dominating. The plan’s weight $\alpha$ follows a slow \emph{cosine decay}, so planning stabilizes while code keeps adapting under stricter speed.
+
+\subsection{Verification Funnel for Throughput}
+We adopt a staged evaluator: \emph{AST/imports} $\to$ \emph{compile} $\to$ \emph{tiny-run correctness} $\to$ \emph{full-run correctness} $\to$ \emph{calibrated speed}. Tokens receive credit only after passing the current stage; failures zero out reward, similar to baseline gating but with stricter early pruning.
+
+% -------------------- Training / Budget -----------
+\section{Training Protocol}
+\textbf{Backbone.} Qwen3-7B (kept fixed across all comparisons).\\
+\textbf{SFT.} Short plan stubs + code on single-op and fused tasks; teacher plans used only as concise hints.\\
+\textbf{RL.} Group-sampled GRPO with hierarchical credit, KL control, clipping; \emph{adaptive} L1/L2 sampling; robust timing and multi-input correctness in the reward path.
+
+% -------------------- Evaluation ------------------
+\section{Evaluation}
+We use KernelBench (Triton backend) Levels 1--2 and report Validity, Compiled, Correct, Speedup, and pass@k. Hardware targets L40S/H100 classes. We include ablations for: (i) fusion-centric data, (ii) hardened correctness (multi-input/metamorphic), (iii) calibrated timing, and (iv) adaptive curriculum.
+
+% -------------------- Limitations -----------------
+\section{Limitations}
+Fusion remains sparse in shaped reward despite multi-input tests; GPU-event thresholds can over-prune borderline kernels; calibrated timing increases per-sample cost. Stronger, learned speed proxies might further increase sample efficiency.
+
+
+\section*{Acknowledgments}
+I am deeply grateful to Prof.\ Jack Sampson for his continued support since my very first day on campus, from thoughtful course guidance (including sharing his bookmarked Computer Architecture Youtube playlists), to greeting me with a smile and nod at Panera every day, to offering me the opportunity to serve as a teaching assistant for two semesters, and providing a reliable study space during many late-night work sessions. His mentorship has shaped both this project and my graduate experience.
+
+I would also like to thank friends and colleagues from Carnegie Mellon University, for insightful discussions and technical feedback on agentic workflows for code generation. Any remaining errors are my own.
+
+% -------------------- Artifact / Reproducibility --
+\section*{Artifact and Reproducibility}
+Code and scripts:\\
+\href{https://github.com/120205690/Efficient-Triton-Kernel-Generation-using-Hierarchical-Reward-Shaping}
+ {\small \url{https://github.com/120205690/Efficient-Triton-Kernel-Generation-using-Hierarchical-Reward-Shaping}}
+
+(Will include data synthesis, SFT/RL loops, verifier~2.0, adaptive schedule, KernelBench evaluation.)
+
+% -------------------- Reproducibility checklist ---
+\section*{Reproducibility Checklist}
+Backbone: Qwen3-7B. \\
+Data: fusion-centric + single-op; strict non-cheating refs; difficulty labels. \\
+SFT: short plan stubs + code. \\
+RL: hierarchical GRPO; group sampling; adaptive L1$\to$L2; robust timing; multi-input correctness. \\
+Verifier: AST linter; import sandbox; LLM judge; compile; tiny-run; full-run; metamorphic; calibrated timing; GPU-event gating. \\
+Eval: KernelBench (Triton) L1/L2; Validity/Compiled/Correct/Speedup; pass@k; matched hardware.
+
+% -------------------- Bibliography ----------------
+\begin{thebibliography}{9}
+\bibitem{tritonrl}
+\emph{TritonRL: Training LLMs to Think and Code Triton Without Cheating}. arXiv preprint 2510.17891.
+\bibitem{kernelbench}
+\emph{KernelBench (Triton backend)}. Benchmark with L1/L2/L3 and standard metrics.
+\end{thebibliography}
+
+\end{document}
