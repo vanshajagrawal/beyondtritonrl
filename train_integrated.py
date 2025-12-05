@@ -22,6 +22,75 @@ from extensions.config import ExtensionConfig
 from tqdm import tqdm
 
 
+def get_model_config(device_type="auto"):
+    """Auto-detect hardware and adjust model config for optimal performance"""
+
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+        num_gpus = torch.cuda.device_count()
+    else:
+        gpu_name = "CPU"
+        gpu_memory = 0
+        num_gpus = 0
+
+    print(f"\n{'='*60}")
+    print(f"Hardware Detection")
+    print(f"{'='*60}")
+    print(f"Detected: {num_gpus}x {gpu_name}")
+    print(f"Memory per GPU: {gpu_memory:.1f}GB")
+    print(f"{'='*60}\n")
+
+    # Adaptive configuration based on hardware
+    if "H100" in gpu_name and num_gpus >= 8:
+        # Full production config for 8×H100
+        print("Using: PRODUCTION CONFIG (8×H100)")
+        return {
+            "model_name": "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "load_in_8bit": False,
+            "device_map": "auto",
+            "max_memory": None,
+            "per_device_batch_size": 2,
+            "torch_dtype": torch.bfloat16,
+        }
+
+    elif "A100" in gpu_name or "H100" in gpu_name:
+        # Single/few GPU config (A100 or H100)
+        print("Using: SINGLE/FEW GPU CONFIG (A100/H100)")
+        return {
+            "model_name": "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "load_in_8bit": True,  # Quantize to fit in smaller memory
+            "device_map": "auto",
+            "max_memory": {i: "38GB" for i in range(num_gpus)} if num_gpus > 0 else None,
+            "per_device_batch_size": 1,
+            "torch_dtype": torch.float16,
+        }
+
+    elif "A10G" in gpu_name or gpu_memory > 20:
+        # Budget GPU config (A10G, RTX 6000, etc.)
+        print("Using: BUDGET GPU CONFIG (A10G/similar)")
+        return {
+            "model_name": "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "load_in_8bit": True,
+            "device_map": "auto",
+            "max_memory": {i: f"{int(gpu_memory * 0.9)}GB" for i in range(num_gpus)} if num_gpus > 0 else None,
+            "per_device_batch_size": 1,
+            "torch_dtype": torch.float16,
+        }
+
+    else:
+        # Fallback: use smaller model for limited hardware
+        print("⚠️  Limited GPU detected, using smaller model (Qwen-1.5B)")
+        return {
+            "model_name": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+            "load_in_8bit": False,
+            "device_map": "auto",
+            "max_memory": None,
+            "per_device_batch_size": 1,
+            "torch_dtype": torch.float16,
+        }
+
+
 class IntegratedTrainer:
     """Trainer with all 4 extensions integrated"""
 
@@ -63,17 +132,30 @@ class IntegratedTrainer:
         print("STAGE 1: SUPERVISED FINE-TUNING")
         print("="*80)
 
-        # Load model
-        print("\nLoading base model: Qwen/Qwen2.5-Coder-7B-Instruct")
+        # Get hardware-adaptive config
+        hw_config = get_model_config()
+
+        # Load model with adaptive settings
+        print(f"\nLoading base model: {hw_config['model_name']}")
+        model_kwargs = {
+            "torch_dtype": hw_config["torch_dtype"],
+            "device_map": hw_config["device_map"],
+            "trust_remote_code": True,
+        }
+
+        if hw_config["load_in_8bit"]:
+            model_kwargs["load_in_8bit"] = True
+
+        if hw_config["max_memory"]:
+            model_kwargs["max_memory"] = hw_config["max_memory"]
+
         model = AutoModelForCausalLM.from_pretrained(
-            "Qwen/Qwen2.5-Coder-7B-Instruct",
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            trust_remote_code=True,
+            hw_config["model_name"],
+            **model_kwargs
         )
 
         tokenizer = AutoTokenizer.from_pretrained(
-            "Qwen/Qwen2.5-Coder-7B-Instruct",
+            hw_config["model_name"],
             trust_remote_code=True,
         )
 
@@ -110,11 +192,11 @@ class IntegratedTrainer:
             remove_columns=["text"],
         )
 
-        # Training arguments
+        # Training arguments (using hardware-adaptive batch size)
         training_args = TrainingArguments(
             output_dir="checkpoints/sft",
             num_train_epochs=1,  # Just 1 epoch for 10-hour budget
-            per_device_train_batch_size=2,
+            per_device_train_batch_size=hw_config["per_device_batch_size"],
             gradient_accumulation_steps=4,
             learning_rate=1e-5,
             warmup_steps=50,
@@ -158,13 +240,26 @@ class IntegratedTrainer:
         print("="*80)
         print(f"\nStrategy: Generate {n_samples} samples, keep top-{top_k}, fine-tune")
 
-        # Load SFT checkpoint
+        # Get hardware-adaptive config
+        hw_config = get_model_config()
+
+        # Load SFT checkpoint with adaptive settings
         print("\nLoading SFT model...")
+        model_kwargs = {
+            "torch_dtype": hw_config["torch_dtype"],
+            "device_map": hw_config["device_map"],
+            "trust_remote_code": True,
+        }
+
+        if hw_config["load_in_8bit"]:
+            model_kwargs["load_in_8bit"] = True
+
+        if hw_config["max_memory"]:
+            model_kwargs["max_memory"] = hw_config["max_memory"]
+
         model = AutoModelForCausalLM.from_pretrained(
             "checkpoints/sft_final",
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            trust_remote_code=True,
+            **model_kwargs
         )
 
         tokenizer = AutoTokenizer.from_pretrained(
