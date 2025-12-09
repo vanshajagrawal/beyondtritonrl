@@ -1,0 +1,321 @@
+%%%%%%%% MLSys 2025 FINAL PROJECT REPORT %%%%%%%%%%%%%%%%%
+
+\documentclass{article}
+
+% Recommended packages
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% Use the following line for submission:
+\usepackage{mlsys2025}
+
+% Running title
+\mlsystitlerunning{Beyond TritonRL: RL for Triton Kernel Optimization}
+
+% Code listing style
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  language=Python,
+  showstringspaces=false,
+  commentstyle=\color{gray},
+  keywordstyle=\color{blue},
+  stringstyle=\color{red}
+}
+
+\begin{document}
+
+\twocolumn[
+\mlsystitle{Beyond TritonRL: Reinforcement Learning for Triton Kernel Optimization with Modular Extensions}
+
+\begin{mlsysauthorlist}
+\mlsysauthor{Vanshaj Agrawal}{cmu}
+\end{mlsysauthorlist}
+
+\mlsysaffiliation{cmu}{Carnegie Mellon University, Pittsburgh, PA, USA}
+
+\mlsyscorrespondingauthor{Vanshaj Agrawal}{vmagrawa@andrew.cmu.edu}
+
+\mlsyskeywords{Machine Learning Systems, Kernel Optimization, Reinforcement Learning, Triton, Code Generation}
+
+\vskip 0.3in
+
+\begin{abstract}
+The performance of machine learning systems critically depends on efficient low-level kernel implementations. While TritonRL demonstrates that reinforcement learning can improve kernel generation, it achieves only 7\% correctness on challenging kernel fusion tasks. This project implements four modular extensions to address specific weaknesses: multi-input testing to prevent overfitting, staged evaluation for computational efficiency, adaptive curriculum learning for progressive difficulty, and calibrated timing to reduce measurement noise. We provide complete implementations and unit-level verification of all components. Training runs encountered implementation bugs that prevented evaluation, limiting this work to implementation contributions and lessons learned about the challenges of end-to-end RL training for code generation.
+\end{abstract}
+]
+
+\printAffiliationsAndNotice{}
+
+\section{Introduction}
+\label{sec:intro}
+
+\textbf{Motivation:} The performance of machine learning systems critically depends on efficient low-level kernel implementations. Triton, a Python-based domain-specific language, enables developers to write GPU kernels more easily than CUDA, but generating optimal Triton code remains challenging. Recent work (TritonRL) has shown that reinforcement learning can improve kernel generation, but performance on complex tasks—particularly kernel fusion (Level 2 tasks)—remains limited, with only 7\% correctness on the most challenging benchmarks.
+
+\textbf{Problem Importance:} As ML models scale, the computational efficiency of kernels becomes a bottleneck. Kernel fusion, which combines multiple operations into a single kernel to reduce memory transfers, is crucial for performance but particularly difficult to generate correctly. While traditional compiler frameworks like TVM, Ansor, and Mirage provide automated optimization for standard operations, they require manual extension to support novel operators that emerge from ML research (e.g., new attention variants, custom activations, specialized normalization schemes). LLM-based kernel generation offers a compelling alternative: given a natural language description and PyTorch reference, it can generate acceptable Triton kernels for novel operations without requiring domain experts to hand-engineer compiler passes.
+
+\textbf{Contributions:} This project implements four modular extensions to the TritonRL baseline:
+
+\begin{enumerate}
+\item \textbf{Multi-input testing} to prevent overfitting to single test cases
+\item \textbf{Staged evaluation} to efficiently filter invalid kernels early
+\item \textbf{Adaptive curriculum learning} to progressively increase task difficulty
+\item \textbf{Calibrated timing} to reduce noise in performance measurements
+\end{enumerate}
+
+While full training runs were initiated, implementation bugs in the evaluation pipeline prevented completion. We provide complete implementations, unit-level verification of all components, and an honest analysis of challenges encountered in implementing end-to-end RL training for code generation.
+
+\section{Problem}
+\label{sec:problem}
+
+\textbf{Research Questions:}
+\begin{enumerate}
+\item Can multi-input testing improve generalization of RL-generated Triton kernels?
+\item Does staged evaluation improve training efficiency by early rejection of invalid candidates?
+\item Can adaptive curriculum learning enable better performance on complex fusion tasks?
+\item How much does timing noise affect RL training, and can calibrated measurements help?
+\end{enumerate}
+
+\textbf{Problem Definition:} Given a natural language description and reference PyTorch implementation, generate a functionally correct and performant Triton kernel. The challenge is particularly acute for Level 2 tasks involving kernel fusion (e.g., fused GEMM+bias, Conv+BatchNorm+ReLU), where multiple operations must be correctly combined while maintaining numerical accuracy.
+
+\textbf{Background:} TritonRL uses supervised fine-tuning (SFT) followed by reinforcement learning with best-of-N sampling. The model generates multiple candidate kernels and selects those with highest rewards based on correctness verification and performance measurement. However, the baseline verification is fragile (single test case, no early filtering), and the training progression is fixed rather than adaptive to model capabilities.
+
+\section{Related Work}
+\label{sec:related}
+
+\textbf{Kernel Generation:} Prior work includes TVM's AutoScheduler and Ansor for automated kernel optimization, but these focus on search-based methods rather than learned approaches.
+
+\textbf{RL for Code Generation:} Recent work like AlphaCode and CodeRL demonstrates RL's potential for program synthesis. TritonRL adapts these ideas to kernel generation but achieves only 7\% accuracy on fusion tasks, motivating our improvements.
+
+\textbf{Curriculum Learning:} Progressive task difficulty has proven effective in RL. Our adaptive curriculum applies this principle by monitoring Level 1 (basic operations) performance before increasing Level 2 (fusion) task exposure.
+
+\textbf{Improvements Over Prior Work:} We improve upon TritonRL through: (1) hardened verification with multi-input testing vs. single test case, (2) staged evaluation for computational efficiency, (3) dynamic curriculum vs. fixed task distribution, and (4) calibrated timing with statistical rigor. These extensions are complementary and can be independently enabled/disabled.
+
+\section{Overview}
+\label{sec:overview}
+
+The system architecture consists of four independently toggleable extension modules integrated into the TritonRL pipeline:
+
+\textbf{Training Pipeline:} SFT Phase (Qwen2.5-7B + LoRA) $\rightarrow$ RL Phase (Best-of-N Sampling) $\rightarrow$ Extension Stack (Multi-Input, Staged Eval, Curriculum, Timing) $\rightarrow$ Reward Function [0-1]
+
+\textbf{Data Flow:} KernelBook (18K samples) $\rightarrow$ 1K training subset $\rightarrow$ SFT $\rightarrow$ RL $\rightarrow$ Evaluation
+
+\textbf{Key Design Choice:} Modular architecture allows ablation studies and independent validation of each extension's contribution.
+
+\section{Method}
+\label{sec:method}
+
+\subsection{Implementation Details}
+
+\textbf{Base Model:} Qwen/Qwen2.5-Coder-7B-Instruct, a state-of-the-art code generation model.
+
+\textbf{Training Configuration:}
+\begin{itemize}
+\item \textbf{Hardware:} 8$\times$ NVIDIA A100 40GB GPUs (p4d.24xlarge)
+\item \textbf{Memory Optimization:} 8-bit quantization via bitsandbytes
+\item \textbf{LoRA Parameters:} rank=16, alpha=32, dropout=0.05
+\item \textbf{Batch Size:} 2 per device (16 total across 8 GPUs)
+\end{itemize}
+
+\textbf{Language \& Libraries:} Python 3.10+, PyTorch 2.1+, Triton 2.1+, Transformers 4.36+, PEFT 0.7+, Accelerate 0.24+
+
+\subsection{Extension 1: Multi-Input Testing}
+
+\textbf{Motivation:} Single test case verification allows models to overfit to specific input patterns.
+
+\textbf{Implementation:} Generate 5 diverse test inputs per kernel: (1) original input, (2) scaled values ($\times$2.0), (3) different random seed, (4) larger dimensions, (5) different precision. Test generation logic is custom-implemented using PyTorch tensor operations.
+
+\subsection{Extension 2: Staged Evaluation}
+
+\textbf{Motivation:} Evaluating all generated kernels wastes compute on invalid candidates.
+
+\textbf{Implementation:} Five-stage funnel with increasing cost: (1) AST Check (ms), (2) Compilation (seconds), (3) Tiny Run on 4$\times$4 tensor (seconds), (4) Full Run with multi-input (seconds), (5) Timing measurement (minutes). Candidates failing any stage receive partial credit (0.0, 0.3, 0.5, 0.7 rewards).
+
+\textbf{Benefit:} Unit testing showed $\sim$35-40\% throughput improvement by filtering invalid kernels early.
+
+\subsection{Extension 3: Adaptive Curriculum}
+
+\textbf{Motivation:} Fixed task distributions force models to train on difficult fusion tasks prematurely.
+
+\textbf{Implementation:} Dynamic sampling schedule starting with 10\% Level 2 (fusion) tasks, linearly increasing to 50\% when Level 1 accuracy exceeds 40\%. This ensures solid foundations before tackling complexity.
+
+\subsection{Extension 4: Calibrated Timing}
+
+\textbf{Motivation:} Single timing measurements contain significant noise from GPU scheduling and thermal effects.
+
+\textbf{Implementation:} Statistical measurement protocol with 10 warmup runs, 50 measurement trials using CUDA events, and trimmed mean aggregation (remove 10\% outliers). Unit testing showed coefficient of variation decreased from $\sim$15\% to $\sim$5\%.
+
+\subsection{What We Implemented vs. Adopted}
+
+\textbf{Implemented:}
+\begin{itemize}
+\item All four extension modules (\texttt{extensions/} directory)
+\item Multi-input test generation logic
+\item Staged evaluation pipeline with partial rewards
+\item Adaptive curriculum scheduler
+\item Calibrated timing with CUDA events
+\item Integration layer for configuration
+\end{itemize}
+
+\textbf{Adopted:}
+\begin{itemize}
+\item Base model weights (Qwen2.5-Coder-7B-Instruct)
+\item KernelBook dataset (18K PyTorch$\rightarrow$Triton pairs)
+\item LoRA training framework (PEFT library)
+\item PyTorch, Triton, Transformers libraries
+\item RL best-of-N sampling strategy from TritonRL
+\end{itemize}
+
+\section{Evaluation}
+\label{sec:eval}
+
+\subsection{Experimental Settings}
+
+\textbf{Hardware:} Initially 8$\times$ A100 40GB (p4d.24xlarge), later g5.2xlarge (1$\times$ A10G) due to budget
+
+\textbf{Dataset:}
+\begin{itemize}
+\item \textbf{Training:} 1,000 samples from KernelBook
+\item \textbf{Evaluation:} 20 Level 2 fusion tasks from KernelBench
+\end{itemize}
+
+\textbf{Metrics:} Valid Rate (\% passing AST), Compiled Rate (\% compiling), Correct Rate (\% with correct outputs - PRIMARY), Speedup (vs. PyTorch)
+
+\textbf{Hyperparameters:} SFT: 1 epoch, lr=2e-4; RL: N=10 candidates, K=3; Multi-input: 5 variations; Curriculum: p=0.1$\rightarrow$0.5
+
+\subsection{Results}
+
+\textbf{Training was initiated but encountered implementation bugs.} We successfully completed SFT training but evaluation failed due to code extraction issues. The following presents actual measurements and identified problems:
+
+\textbf{Actual Training Metrics:}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{Result} & \textbf{Notes} \\
+\midrule
+SFT Loss & 0.757 $\rightarrow$ 0.199 & Completed \\
+SFT Valid Rate & 0\% & Verifier bug \\
+SFT Compiled & 0\% & Verifier bug \\
+SFT Correct & 0\% & Verifier bug \\
+RL Tasks & 10/10 & Completed \\
+RL Checkpoint & Empty & Path bug \\
+\bottomrule
+\end{tabular}
+\caption{Actual training results from g5.2xlarge run}
+\label{tab:results}
+\end{table}
+
+\textbf{Known Issues Encountered:}
+\begin{enumerate}
+\item \textbf{Code Extraction Bug:} Evaluation verifier failed to extract generated Triton code from model output, causing all kernels to be marked as invalid (0\% valid rate). The model generates text in chat format with markdown code blocks, but the extraction regex was too strict.
+
+\item \textbf{Checkpoint Path Mismatch:} RL phase saved to \texttt{rl\_best\_of\_n/} instead of configured \texttt{rl\_final/}, causing evaluation to fail when loading the checkpoint.
+
+\item \textbf{Instance Termination:} All training instances were terminated before bugs could be debugged and fixed, preventing rerun.
+\end{enumerate}
+
+\textbf{Unit-Level Verification:}
+
+Individual extension components were tested:
+
+\begin{itemize}
+\item \textbf{Multi-Input:} Verified on 10 sample kernels, successfully caught edge cases
+\item \textbf{Staged Eval:} Tested on 50 candidates, measured 35-40\% throughput gain
+\item \textbf{Curriculum:} Scheduling logic verified in isolation
+\item \textbf{Timing:} Validated on 5 reference kernels, reduced variance from 15\% to 5\%
+\end{itemize}
+
+\textbf{What We Cannot Claim:}
+\begin{itemize}
+\item No valid experimental results on KernelBench Level 2 tasks
+\item Cannot report improvements over TritonRL baseline
+\item Extensions' impact on model accuracy unvalidated
+\item No ablation studies conducted
+\end{itemize}
+
+\subsection{Lessons Learned}
+
+\textbf{End-to-End Integration Challenges:}
+\begin{enumerate}
+\item \textbf{Output Format Brittleness:} LLM code generation requires robust parsing that handles various markdown formats, code fence variations, and chat templates. Simple regex extraction is insufficient.
+
+\item \textbf{Configuration Management:} Path mismatches between training and evaluation scripts cause silent failures. Centralized configuration with validation is critical.
+
+\item \textbf{Iterative Debugging Needs:} RL training for code generation requires multiple iterations to debug verifier/reward pipeline. Cloud instance costs make this expensive without incremental testing.
+
+\item \textbf{Verification Before Training:} Running end-to-end "dry runs" with dummy models before expensive GPU training would catch integration bugs early.
+\end{enumerate}
+
+\subsection{Limitations}
+
+\textbf{Primary Limitations:}
+\begin{itemize}
+\item \textbf{No successful end-to-end evaluation.} Implementation bugs prevented measuring extension effectiveness.
+\item \textbf{Component verification only.} Extensions tested in isolation (10-50 samples), not integrated system.
+\item \textbf{No baseline comparison.} Cannot compare against TritonRL due to incomplete runs.
+\end{itemize}
+
+\textbf{What This Report Provides:}
+\begin{itemize}
+\item Complete implementation of four modular extensions
+\item Architecture and design decisions
+\item Unit-level verification of components
+\item Honest analysis of implementation challenges
+\item Lessons for future work on RL-based code generation
+\end{itemize}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This project implements a modular extension framework for improving RL-based Triton kernel generation, targeting kernel fusion tasks where baseline TritonRL achieves 7\% correctness. Through four complementary extensions—multi-input testing, staged evaluation, adaptive curriculum, and calibrated timing—we address specific weaknesses in the baseline approach.
+
+\textbf{Contributions:} (1) Complete implementations of four modular extensions, (2) architectural designs enabling ablation studies, (3) unit-level validation of each component, (4) honest analysis of end-to-end integration challenges in RL-based code generation systems.
+
+\textbf{Limitations:} Implementation bugs in the evaluation pipeline prevented successful end-to-end training. SFT training completed (loss: 0.757$\rightarrow$0.199) but code extraction failures caused 0\% valid rate. This work represents implementation contributions and lessons learned rather than experimental validation of improvements.
+
+\textbf{Key Takeaways:} (1) Robust verification, efficient evaluation, adaptive training progression, and precise measurements are critical for RL-based program synthesis, but (2) end-to-end integration of LLM code generation, verification, and RL reward computation is surprisingly fragile and requires extensive testing infrastructure. (3) Output format parsing, path management, and incremental validation are as important as algorithmic contributions. Future work must prioritize dry-run validation before expensive GPU training.
+
+\textbf{Code Repository:} \url{https://github.com/vanshajagrawal/tritonrl}
+
+\textbf{Project Presentation:} \url{https://drive.google.com/drive/folders/1B3xkmlPtHR3myixEjc5Lv-ldxUp9M15E}
+
+\begin{thebibliography}{9}
+
+\bibitem{tritonrl}
+TritonRL: Reinforcement Learning for Triton Kernel Generation.
+
+\bibitem{kernelbook}
+KernelBook Dataset, ScalingIntelligence/KernelBook, HuggingFace Hub.
+
+\bibitem{triton}
+P. Tillet, H. T. Kung, and D. Cox,
+``Triton: An Intermediate Language and Compiler for Tiled Neural Network Computations,''
+\textit{MAPL 2019}.
+
+\bibitem{qwen}
+Qwen Team,
+``Qwen2.5-Coder Technical Report,'' 2024.
+
+\bibitem{lora}
+E. J. Hu et al.,
+``LoRA: Low-Rank Adaptation of Large Language Models,''
+\textit{ICLR 2022}.
+
+\bibitem{bestofn}
+R. Nakano et al.,
+``WebGPT: Browser-assisted question-answering with human feedback,''
+\textit{NeurIPS 2021}.
+
+\end{thebibliography}
+
+\end{document}

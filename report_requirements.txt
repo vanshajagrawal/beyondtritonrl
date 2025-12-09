@@ -1,0 +1,13 @@
+Final course project report (Deadline: 12/15/25)
+For your final project report, the team is expected to write a final report (up to 8 pages without references) that generally follows the format of publication in the MLSys conference with following components:
+
+Title / Team members (name and andrew ID)
+Introduction: Highlight your motivation and contribution; how important is your problem? Why is your work important in this field? What are your main contributions?
+Problem: What research questions are your project trying to answer? Clearly define the problem you are trying to solve. Include a precise description/background about the problem.
+Related work: Organize previous work related to your own; what problem do they solve and how do they relate to yours? How did you improve on what has already been done?
+Overview: Present a system (or architecture) overview of your system using a single figure. Your system can be just one or a few system components rather than an end-to-end stack. Still, you should clearly show what you have done for this course project.
+Method (or system): Provide a detailed description of your own method or system. It is also fine not to have your own ideas as long as you provide meaningful insights to this field (e.g., exploring the communication/computation tradeoff by evaluating various federated learning algorithms). In addition, describe how you implemented your work. Specifically, which language and library did you use? Clearly distinguish between what you implemented and what you adopted.
+Evaluation: How did you evaluate your system? What are experimental settings (e.g., hardware)? If any, what datasets did you use? What are evaluation metrics and hyperparameters?
+Conclusion: Summarize your work in a single paragraph
+You are required to submit your codes and final report in the MLSys 2025 format (PDF) to the Gradescope. Again, please make sure you mark your partner as a collaborator on Gradescope and that all names are listed in the final report.
+
