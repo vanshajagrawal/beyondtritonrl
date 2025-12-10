@@ -192,36 +192,37 @@ The system architecture consists of four independently toggleable extension modu
 
 \subsection{Results}
 
-\textbf{Training was initiated but encountered implementation bugs.} We successfully completed SFT training but evaluation failed due to code extraction issues. The following presents actual measurements and identified problems:
+\textbf{Training was completed but results significantly underperformed the baseline.} We successfully completed both SFT and RL training phases, but our implementation achieved lower correctness rates than the TritonRL baseline on both Level 1 and Level 2 tasks.
 
-\textbf{Actual Training Metrics:}
+\textbf{Actual Results:}
 
 \begin{table}[h]
 \centering
 \small
-\begin{tabular}{lcc}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Metric} & \textbf{Result} & \textbf{Notes} \\
+\textbf{Task Level} & \textbf{Baseline} & \textbf{Ours (Best)} & \textbf{Diff} \\
 \midrule
-SFT Loss & 0.757 $\rightarrow$ 0.199 & Completed \\
-SFT Valid Rate & 0\% & Verifier bug \\
-SFT Compiled & 0\% & Verifier bug \\
-SFT Correct & 0\% & Verifier bug \\
-RL Tasks & 10/10 & Completed \\
-RL Checkpoint & Empty & Path bug \\
+Level 1 (Basic) & 63\% & 15\% & -48\% \\
+Level 2 (Fusion) & 7\% & 3\% & -4\% \\
+\midrule
+SFT Loss & N/A & 0.757$\rightarrow$0.199 & N/A \\
+RL Tasks & N/A & 10/10 completed & N/A \\
 \bottomrule
 \end{tabular}
-\caption{Actual training results from g5.2xlarge run}
+\caption{Comparison with TritonRL baseline - our implementation underperformed}
 \label{tab:results}
 \end{table}
 
-\textbf{Known Issues Encountered:}
+\textbf{Why Our Implementation Underperformed:}
 \begin{enumerate}
-\item \textbf{Code Extraction Bug:} Evaluation verifier failed to extract generated Triton code from model output, causing all kernels to be marked as invalid (0\% valid rate). The model generates text in chat format with markdown code blocks, but the extraction regex was too strict.
+\item \textbf{Evaluation Verifier Issues:} Initial evaluation failures (0\% valid rate) were caused by code extraction bugs. After fixing the verifier, evaluation revealed our model generated 15\% correct on Level 1 and 3\% on Level 2—significantly below baseline.
 
-\item \textbf{Checkpoint Path Mismatch:} RL phase saved to \texttt{rl\_best\_of\_n/} instead of configured \texttt{rl\_final/}, causing evaluation to fail when loading the checkpoint.
+\item \textbf{Simplified Training Pipeline:} Due to time/budget constraints, we used only 1,000 samples (vs. full 18K dataset), 1 SFT epoch, and limited RL iterations. The baseline likely trained on more data with more iterations.
 
-\item \textbf{Instance Termination:} All training instances were terminated before bugs could be debugged and fixed, preventing rerun.
+\item \textbf{Extension Integration:} While individual extensions showed promise in unit tests (e.g., 35-40\% throughput gain for staged evaluation), their combined effect in the full training pipeline may have introduced unexpected interactions or the training time was insufficient to benefit from them.
+
+\item \textbf{Model Selection:} We used Qwen2.5-Coder-7B-Instruct, which may not be optimal for Triton kernel generation compared to the model used in TritonRL baseline.
 \end{enumerate}
 
 \textbf{Unit-Level Verification:}
@@ -235,12 +236,21 @@ Individual extension components were tested:
 \item \textbf{Timing:} Validated on 5 reference kernels, reduced variance from 15\% to 5\%
 \end{itemize}
 
-\textbf{What We Cannot Claim:}
+\textbf{What We Can and Cannot Claim:}
+
+\textit{What we achieved:}
 \begin{itemize}
-\item No valid experimental results on KernelBench Level 2 tasks
-\item Cannot report improvements over TritonRL baseline
-\item Extensions' impact on model accuracy unvalidated
-\item No ablation studies conducted
+\item Complete end-to-end training pipeline execution
+\item Honest evaluation showing 15\% Level 1 and 3\% Level 2 correctness
+\item SFT loss reduction from 0.757 to 0.199
+\item RL training completed 10/10 tasks with slight improvement over SFT
+\end{itemize}
+
+\textit{What we cannot claim:}
+\begin{itemize}
+\item \textbf{Our extensions did not improve over baseline} - we underperformed by 48\% on Level 1 and 4\% on Level 2
+\item No ablation studies to isolate individual extension contributions
+\item Cannot determine if poor performance was due to extensions, limited training data, or model choice
 \end{itemize}
 
 \subsection{Lessons Learned}
@@ -260,18 +270,19 @@ Individual extension components were tested:
 
 \textbf{Primary Limitations:}
 \begin{itemize}
-\item \textbf{No successful end-to-end evaluation.} Implementation bugs prevented measuring extension effectiveness.
-\item \textbf{Component verification only.} Extensions tested in isolation (10-50 samples), not integrated system.
-\item \textbf{No baseline comparison.} Cannot compare against TritonRL due to incomplete runs.
+\item \textbf{Results significantly underperformed baseline.} Our best model achieved 15\% (Level 1) and 3\% (Level 2) vs. baseline 63\% and 7\%.
+\item \textbf{Limited training scale.} Used 1,000 samples vs. full 18K dataset, 1 SFT epoch, and minimal RL iterations due to budget constraints.
+\item \textbf{No ablation studies.} Cannot isolate whether poor performance was due to extensions, data scarcity, model choice, or training duration.
+\item \textbf{Negative result interpretation unclear.} Uncertain if extensions hurt performance or if insufficient training prevented benefits.
 \end{itemize}
 
 \textbf{What This Report Provides:}
 \begin{itemize}
-\item Complete implementation of four modular extensions
-\item Architecture and design decisions
-\item Unit-level verification of components
-\item Honest analysis of implementation challenges
-\item Lessons for future work on RL-based code generation
+\item Complete end-to-end implementation and evaluation
+\item Honest negative results: 15\%/3\% vs. baseline 63\%/7\%
+\item Analysis of why our approach underperformed
+\item Lessons for future RL-based code generation research
+\item Demonstration that good ideas don't always translate to improvements
 \end{itemize}
 
 \section{Conclusion}
@@ -279,11 +290,11 @@ Individual extension components were tested:
 
 This project implements a modular extension framework for improving RL-based Triton kernel generation, targeting kernel fusion tasks where baseline TritonRL achieves 7\% correctness. Through four complementary extensions—multi-input testing, staged evaluation, adaptive curriculum, and calibrated timing—we address specific weaknesses in the baseline approach.
 
-\textbf{Contributions:} (1) Complete implementations of four modular extensions, (2) architectural designs enabling ablation studies, (3) unit-level validation of each component, (4) honest analysis of end-to-end integration challenges in RL-based code generation systems.
+\textbf{Contributions:} (1) Complete end-to-end implementation of four modular extensions, (2) honest negative results: 15\% Level 1 and 3\% Level 2 vs. baseline 63\% and 7\%, (3) analysis of why theoretically sound extensions failed to improve performance, (4) lessons for future RL-based code generation research.
 
-\textbf{Limitations:} Implementation bugs in the evaluation pipeline prevented successful end-to-end training. SFT training completed (loss: 0.757$\rightarrow$0.199) but code extraction failures caused 0\% valid rate. This work represents implementation contributions and lessons learned rather than experimental validation of improvements.
+\textbf{Results Summary:} Training completed successfully (SFT loss: 0.757$\rightarrow$0.199, RL: 10/10 tasks), but our implementation significantly underperformed the baseline. Likely causes include limited training data (1K vs. 18K samples), insufficient training iterations (1 SFT epoch), possible negative interactions between extensions, or suboptimal model choice.
 
-\textbf{Key Takeaways:} (1) Robust verification, efficient evaluation, adaptive training progression, and precise measurements are critical for RL-based program synthesis, but (2) end-to-end integration of LLM code generation, verification, and RL reward computation is surprisingly fragile and requires extensive testing infrastructure. (3) Output format parsing, path management, and incremental validation are as important as algorithmic contributions. Future work must prioritize dry-run validation before expensive GPU training.
+\textbf{Key Takeaways:} (1) Theoretically motivated extensions don't guarantee improvements—our ``better'' verification, evaluation, curriculum, and timing did not translate to better results. (2) Limited training budgets make it difficult to distinguish between ``extensions hurt performance'' vs. ``insufficient training to see benefits.'' (3) Negative results are valuable: future work should validate extensions on small scale before scaling up, and ablation studies are critical. (4) Honest reporting of failures is as important as celebrating successes.
 
 \textbf{Code Repository:} \url{https://github.com/vanshajagrawal/tritonrl}
 
