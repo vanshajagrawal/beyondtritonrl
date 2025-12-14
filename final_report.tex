@@ -101,11 +101,39 @@ While full training runs were initiated, implementation bugs in the evaluation p
 \section{Overview}
 \label{sec:overview}
 
-The system architecture consists of four independently toggleable extension modules integrated into the TritonRL pipeline:
+The system architecture consists of four independently toggleable extension modules integrated into the TritonRL pipeline. Figure~\ref{fig:architecture} illustrates the training pipeline with the modular extension stack positioned between the RL phase and reward computation.
 
-\textbf{Training Pipeline:} SFT Phase (Qwen2.5-7B + LoRA) $\rightarrow$ RL Phase (Best-of-N Sampling) $\rightarrow$ Extension Stack (Multi-Input, Staged Eval, Curriculum, Timing) $\rightarrow$ Reward Function [0-1]
-
-\textbf{Data Flow:} KernelBook (18K samples) $\rightarrow$ 1K training subset $\rightarrow$ SFT $\rightarrow$ RL $\rightarrow$ Evaluation
+\begin{figure}[t]
+\centering
+\small
+\framebox[\columnwidth]{
+\begin{minipage}{0.95\columnwidth}
+\textbf{Training Pipeline}\\[0.3em]
+\rule{\linewidth}{0.4pt}\\[0.3em]
+\textbf{Phase 1: SFT}\\
+Base: Qwen2.5-7B-Instruct\\
+Method: LoRA (r=16, $\alpha$=32)\\
+Data: 1K samples\\[0.5em]
+$\downarrow$\\[0.5em]
+\textbf{Phase 2: RL (Best-of-N)}\\
+Generate N=10, Keep K=3\\
+Target: Level 2 fusion tasks\\[0.5em]
+$\downarrow$\\[0.5em]
+\textbf{Extension Stack:}\\
+\hspace{1em}1. Multi-Input Testing (5 variations)\\
+\hspace{1em}2. Staged Evaluation (5 stages)\\
+\hspace{1em}3. Adaptive Curriculum (10\%$\rightarrow$50\%)\\
+\hspace{1em}4. Calibrated Timing (warmup+trials)\\[0.5em]
+$\downarrow$\\[0.5em]
+\textbf{Reward Function} [0.0 -- 1.0]\\[0.3em]
+\rule{\linewidth}{0.4pt}\\[0.3em]
+\textbf{Data Flow:}\\
+KernelBook (18K) $\rightarrow$ 1K subset $\rightarrow$ SFT $\rightarrow$ RL $\rightarrow$ Eval
+\end{minipage}
+}
+\caption{System architecture showing the modular training pipeline with four independently toggleable extensions integrated between RL and reward computation.}
+\label{fig:architecture}
+\end{figure}
 
 \textbf{Key Design Choice:} Modular architecture allows ablation studies and independent validation of each extension's contribution.
 

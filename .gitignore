@@ -16,3 +16,7 @@ checkpoints/
 wandb/
 outputs/
 data/cache/
+
+# PDFs
+*.pdf
+Triton Kernel Generation .pdf
