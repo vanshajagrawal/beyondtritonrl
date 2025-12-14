@@ -50,3 +50,4 @@ class EvalConfig:
     temperature: float = 0.8
     device: str = "cuda"
     timeout: int = 30
+# Config updates
