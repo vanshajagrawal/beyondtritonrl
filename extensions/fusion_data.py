@@ -219,4 +219,160 @@ The reference PyTorch implementation is:
 ```
 
 Implement a fused Triton kernel that combines these operations for maximum performance. Name your optimized model ModelNew. Output real, compilable code."""
-# Feature enhancements
+
+    def _generate_attention_fusion(self) -> List[Dict]:
+        """Generate attention mechanism fusion tasks (QKV projection + softmax + dropout)"""
+        tasks = []
+
+        # Attention configurations
+        configs = [
+            {'seq_len': 512, 'hidden': 768, 'heads': 12},   # BERT-base
+            {'seq_len': 1024, 'hidden': 1024, 'heads': 16},  # Larger model
+            {'seq_len': 2048, 'hidden': 1280, 'heads': 20},  # Very large
+        ][:self.config.fusion_num_shapes]
+
+        for config in configs:
+            seq_len, hidden, heads = config['seq_len'], config['hidden'], config['heads']
+
+            # Generate PyTorch code
+            pytorch_code = f"""
+import torch
+import torch.nn.functional as F
+
+class Model(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.qkv_proj = torch.nn.Linear({hidden}, 3 * {hidden})
+        self.dropout = torch.nn.Dropout(0.1)
+
+    def forward(self, x):
+        B, S, D = x.shape
+        qkv = self.qkv_proj(x)
+        q, k, v = qkv.chunk(3, dim=-1)
+
+        # Reshape for attention
+        q = q.view(B, S, {heads}, D // {heads}).transpose(1, 2)
+        k = k.view(B, S, {heads}, D // {heads}).transpose(1, 2)
+        v = v.view(B, S, {heads}, D // {heads}).transpose(1, 2)
+
+        # Attention computation
+        scale = (D // {heads}) ** -0.5
+        attn_weights = torch.matmul(q, k.transpose(-2, -1)) * scale
+        attn_weights = F.softmax(attn_weights, dim=-1)
+        attn_weights = self.dropout(attn_weights)
+
+        # Output projection
+        output = torch.matmul(attn_weights, v)
+        output = output.transpose(1, 2).contiguous().view(B, S, D)
+        return output
+"""
+
+            task = {
+                'id': f'attention_{seq_len}_{hidden}_{heads}',
+                'pytorch_code': pytorch_code.strip(),
+                'difficulty': 2,  # Fusion level
+                'task_type': 'attention_fusion',
+                'description': f'Attention mechanism fusion (seq_len={seq_len}, hidden={hidden}, heads={heads})'
+            }
+            tasks.append(task)
+
+        return tasks
+
+    def _generate_transformer_block(self) -> List[Dict]:
+        """Generate complete transformer block fusion tasks"""
+        tasks = []
+
+        configs = [
+            {'seq_len': 512, 'hidden': 768, 'ffn_dim': 3072},  # BERT-base
+            {'seq_len': 1024, 'hidden': 1024, 'ffn_dim': 4096}, # Larger
+        ][:self.config.fusion_num_shapes]
+
+        for config in configs:
+            seq_len, hidden, ffn_dim = config['seq_len'], config['hidden'], config['ffn_dim']
+
+            pytorch_code = f"""
+import torch
+import torch.nn.functional as F
+
+class Model(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.attn_norm = torch.nn.LayerNorm({hidden})
+        self.ffn_norm = torch.nn.LayerNorm({hidden})
+
+        # Attention components
+        self.qkv_proj = torch.nn.Linear({hidden}, 3 * {hidden})
+        self.out_proj = torch.nn.Linear({hidden}, {hidden})
+
+        # FFN components
+        self.ffn1 = torch.nn.Linear({hidden}, {ffn_dim})
+        self.ffn2 = torch.nn.Linear({ffn_dim}, {hidden})
+
+        self.dropout = torch.nn.Dropout(0.1)
+
+    def forward(self, x):
+        # Multi-head attention with residual
+        attn_input = self.attn_norm(x)
+        qkv = self.qkv_proj(attn_input)
+        q, k, v = qkv.chunk(3, dim=-1)
+
+        # Simplified attention (just QK^T scaling for demo)
+        attn_output = torch.matmul(q, k.transpose(-2, -1)) / ({hidden} ** 0.5)
+        attn_output = F.softmax(attn_output, dim=-1)
+        attn_output = torch.matmul(attn_output, v)
+        attn_output = self.out_proj(attn_output)
+        x = x + self.dropout(attn_output)
+
+        # Feed-forward network with residual
+        ffn_input = self.ffn_norm(x)
+        ffn_output = self.ffn1(ffn_input)
+        ffn_output = F.gelu(ffn_output)
+        ffn_output = self.ffn2(ffn_output)
+        x = x + self.dropout(ffn_output)
+
+        return x
+"""
+
+            task = {
+                'id': f'transformer_block_{seq_len}_{hidden}',
+                'pytorch_code': pytorch_code.strip(),
+                'difficulty': 3,  # Advanced fusion
+                'task_type': 'transformer_block',
+                'description': f'Complete transformer block (seq_len={seq_len}, hidden={hidden})'
+            }
+            tasks.append(task)
+
+        return tasks
+
+    def _validate_fusion_patterns(self) -> Dict[str, bool]:
+        """Validate that all configured fusion patterns are implemented"""
+        validation_results = {}
+
+        for pattern in self.config.fusion_patterns:
+            method_name = f'_generate_{pattern}'
+            has_method = hasattr(self, method_name)
+            validation_results[pattern] = has_method
+
+            if not has_method:
+                print(f"Warning: Fusion pattern '{pattern}' is not implemented")
+
+        return validation_results
+
+    def get_fusion_statistics(self) -> Dict[str, int]:
+        """Get statistics about generated fusion patterns"""
+        stats = {
+            'total_patterns': len(self.config.fusion_patterns),
+            'implemented_patterns': 0,
+            'estimated_tasks': 0
+        }
+
+        validation = self._validate_fusion_patterns()
+        stats['implemented_patterns'] = sum(validation.values())
+
+        # Estimate total tasks
+        for pattern in self.config.fusion_patterns:
+            if validation.get(pattern, False):
+                # Rough estimate: patterns × shapes × dtypes
+                stats['estimated_tasks'] += self.config.fusion_num_shapes * len(self.config.fusion_dtypes)
+
+        return stats
