@@ -203,4 +203,97 @@ class TritonVerifier:
 
         else:
             raise ValueError(f"Unknown reward type: {reward_type}")
-# Bug fixes
+
+    @staticmethod
+    def _safe_execute_code(code: str, test_inputs: list, timeout: int = 30) -> tuple:
+        """
+        Safely execute code with timeout protection and resource limits.
+
+        Returns:
+            tuple: (success: bool, result: any, execution_time: float, error: str)
+        """
+        import signal
+        from contextlib import contextmanager
+
+        @contextmanager
+        def timeout_context(seconds):
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Code execution timed out")
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            try:
+                yield
+            finally:
+                signal.alarm(0)
+
+        start_time = time.time()
+        try:
+            with timeout_context(timeout):
+                # Limit memory usage
+                import resource
+                resource.setrlimit(resource.RLIMIT_AS, (1 * 1024 * 1024 * 1024, 1 * 1024 * 1024 * 1024))  # 1GB limit
+
+                namespace = {'torch': torch, 'triton': triton}
+                exec(code, namespace)
+
+                # Execute with test inputs if available
+                if test_inputs and 'Model' in namespace:
+                    model = namespace['Model']()
+                    if hasattr(model, 'cuda'):
+                        model = model.cuda()
+                    model.eval()
+
+                    with torch.no_grad():
+                        result = model(*test_inputs)
+                    return True, result, time.time() - start_time, ""
+
+        except MemoryError:
+            return False, None, time.time() - start_time, "Memory limit exceeded"
+        except TimeoutError:
+            return False, None, time.time() - start_time, "Execution timeout"
+        except Exception as e:
+            return False, None, time.time() - start_time, str(e)
+
+    @staticmethod
+    def _validate_kernel_structure(code: str) -> dict:
+        """
+        Validate Triton kernel structure and extract metadata.
+
+        Returns:
+            dict: Validation results with metadata
+        """
+        validation_result = {
+            'has_kernel_decorator': False,
+            'has_kernel_function': False,
+            'has_grid_specification': False,
+            'uses_triton_operations': False,
+            'parameter_count': 0,
+            'complexity_score': 0
+        }
+
+        # Check for @triton.jit decorator
+        if '@triton.jit' in code:
+            validation_result['has_kernel_decorator'] = True
+
+        # Check for kernel function definition
+        import ast
+        try:
+            tree = ast.parse(code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    validation_result['has_kernel_function'] = True
+                    validation_result['parameter_count'] = len(node.args.args)
+                    # Simple complexity heuristic
+                    validation_result['complexity_score'] = len(list(ast.walk(node)))
+        except:
+            pass
+
+        # Check for grid specification
+        if 'grid=' in code or 'grid =' in code:
+            validation_result['has_grid_specification'] = True
+
+        # Check for Triton operations
+        triton_ops = ['tl.load', 'tl.store', 'tl.dot', 'tl.sum', 'tl.arange']
+        validation_result['uses_triton_operations'] = any(op in code for op in triton_ops)
+
+        return validation_result
