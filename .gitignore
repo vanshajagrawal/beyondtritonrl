@@ -17,6 +17,9 @@ wandb/
 outputs/
 data/cache/
 
+# Documentation and planning
+*.md
+
 # PDFs
 *.pdf
 Triton Kernel Generation .pdf
