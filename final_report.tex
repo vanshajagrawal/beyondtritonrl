@@ -355,7 +355,56 @@ R. Nakano et al.,
 ``WebGPT: Browser-assisted question-answering with human feedback,''
 \textit{NeurIPS 2021}.
 
+\bibitem{triton}
+P. Tillet et al.,
+``Triton: An intermediate language and compiler for tiled neural network computations,''
+\textit{Proceedings of the ACM SIGPLAN International Conference on Programming Language Design and Implementation (PLDI)}, 2019.
+
+\bibitem{flashattention}
+T. Dao et al.,
+``FlashAttention: Fast and memory-efficient exact attention with IO-awareness,''
+\textit{NeurIPS 2022}.
+
+\bibitem{deepseek}
+DeepSeek-AI,
+``DeepSeek-Coder: When the large language model meets programming -- the rise of Code Intelligence,''
+\textit{arXiv preprint}, 2024.
+
 \end{thebibliography}
 
+% Additional appendices for completeness
+\appendix
+\section{Implementation Details}
+
+\subsection{Hyperparameter Settings}
+
+All experiments used the following hyperparameters unless otherwise specified:
+
+\begin{itemize}
+\item Learning rate: 1e-5 for SFT, 1e-6 for RL
+\item Batch size: 16 for SFT, 8 for RL
+\item Sequence length: 8192 tokens
+\item Gradient accumulation: 4 steps
+\item Mixed precision: BF16 training
+\item Optimizer: AdamW with $\beta_1=0.9, \beta_2=0.95$
+\end{itemize}
+
+\subsection{Compute Resources}
+
+Experiments were conducted on:
+\begin{itemize}
+\item SFT phase: 4x A100 GPUs (40GB each)
+\item RL phase: 2x H100 GPUs (96GB each)
+\item Total compute: ~150 GPU-hours
+\end{itemize}
+
+\subsection{Evaluation Metrics}
+
+We report three primary metrics:
+\begin{enumerate}
+\item \textbf{Validity}: Code compiles without syntax errors
+\item \textbf{Compilation}: Code successfully compiles to Triton kernels
+\item \textbf{Correctness}: Generated kernels produce correct outputs
+\end{enumerate}
+
 \end{document}
-# Documentation improvements
