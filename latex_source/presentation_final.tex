@@ -1,0 +1,657 @@
+% Minimalistic Presentation - Similar to Point of Inflection
+\documentclass[aspectratio=169,11pt]{beamer}
+
+% Remove all navigation and decorations
+\usetheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{}
+\setbeamertemplate{headline}{}
+\setbeamertemplate{frametitle}[default][left]
+
+% Colors matching the reference
+\definecolor{BeigeMain}{RGB}{217,207,193}     % Main beige background
+\definecolor{BlackMain}{RGB}{20,20,20}         % Black for dividers
+\definecolor{TextDark}{RGB}{20,20,20}          % Dark text
+\definecolor{TextLight}{RGB}{250,250,250}      % Light text for black slides
+
+% Set default colors
+\setbeamercolor{background canvas}{bg=BeigeMain}
+\setbeamercolor{normal text}{fg=TextDark}
+\setbeamercolor{frametitle}{bg=BeigeMain,fg=TextDark}
+\setbeamertemplate{itemize items}[circle]
+\setbeamercolor{itemize item}{fg=TextDark}
+\setbeamercolor{enumerate item}{fg=TextDark}
+
+% Packages
+\usepackage{fontspec}
+\setmonofont{Courier New}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+
+% Custom frame title style - minimal
+\setbeamertemplate{frametitle}{
+  \vspace{0.5cm}
+  \textbf{\Large\insertframetitle}
+  \vspace{0.3cm}
+}
+
+% Title information
+\title{}
+\author{}
+\date{}
+
+\begin{document}
+
+% Title slide - beige background
+{
+\setbeamercolor{background canvas}{bg=BeigeMain}
+\begin{frame}[plain]
+\vspace{0.3cm}
+\hfill\texttt{\small Dec 15 2025}
+
+\vspace{2cm}
+
+\begin{columns}[T]
+\column{0.5\textwidth}
+{\fontsize{48}{58}\selectfont\textbf{Beyond\\TritonRL}}
+
+\vspace{1cm}
+
+{\Large Vanshaj Agrawal}
+
+\column{0.45\textwidth}
+\end{columns}
+
+\end{frame}
+}
+
+% Section divider - black background
+{
+\setbeamercolor{background canvas}{bg=BlackMain}
+\setbeamercolor{normal text}{fg=TextLight}
+\usebeamercolor[fg]{normal text}
+\begin{frame}[plain]
+\vspace{3cm}
+\begin{center}
+{\fontsize{42}{50}\selectfont\textbf{Introduction}}
+\end{center}
+\end{frame}
+}
+
+% Introduction
+\begin{frame}{Introduction}
+
+\textbf{Problem:} ML system performance depends on efficient GPU kernels
+
+\vspace{0.5cm}
+
+\textbf{Current approach:} TritonRL uses RL to generate Triton kernels
+\begin{itemize}
+    \item 63\% correctness on basic operations (Level 1)
+    \item Only 7\% correctness on kernel fusion tasks (Level 2)
+\end{itemize}
+
+\vspace{0.5cm}
+
+\textbf{Our goal:} Improve performance with four modular extensions
+
+\end{frame}
+
+% Problem Statement
+\begin{frame}{Problem Statement}
+
+\textbf{Research Questions:}
+\begin{enumerate}
+    \item Can multi-input testing improve generalization?
+    \item Does staged evaluation improve training efficiency?
+    \item Can adaptive curriculum help with complex fusion tasks?
+    \item Does timing calibration reduce noise?
+\end{enumerate}
+
+\vspace{0.5cm}
+
+\textbf{Task:} Given natural language + PyTorch reference → Generate correct Triton kernel
+
+\vspace{0.3cm}
+
+\textbf{Challenge:} Level 2 fusion tasks (fused GEMM+bias, Conv+BatchNorm+ReLU)
+
+\end{frame}
+
+% Related Work
+\begin{frame}{Related Work}
+
+\begin{columns}[T]
+\column{0.48\textwidth}
+\textbf{Prior Approaches:}
+\begin{itemize}
+    \item TVM/Ansor: Search-based
+    \item AlphaCode: RL for code
+    \item Curriculum Learning
+\end{itemize}
+
+\vspace{0.5cm}
+
+\textbf{TritonRL Baseline:}
+\begin{itemize}
+    \item SFT + RL (best-of-N)
+    \item N=10, keeps K=3
+    \item Fragile verification
+\end{itemize}
+
+\column{0.48\textwidth}
+\textbf{Our Improvements:}
+\begin{enumerate}
+    \item Multi-input testing
+    \item Staged evaluation
+    \item Adaptive curriculum
+    \item Calibrated timing
+\end{enumerate}
+
+\vspace{0.5cm}
+
+All extensions are \textbf{modular} and independently toggleable
+
+\end{columns}
+
+\end{frame}
+
+% Section divider
+{
+\setbeamercolor{background canvas}{bg=BlackMain}
+\setbeamercolor{normal text}{fg=TextLight}
+\usebeamercolor[fg]{normal text}
+\begin{frame}[plain]
+\vspace{3cm}
+\begin{center}
+{\fontsize{42}{50}\selectfont\textbf{System Design}}
+\end{center}
+\end{frame}
+}
+
+% System Architecture
+\begin{frame}{System Architecture}
+
+\begin{columns}[T]
+\column{0.55\textwidth}
+\textbf{Phase 1: SFT}
+\begin{itemize}
+    \item Base: Qwen2.5-Coder-7B
+    \item LoRA: r=16, α=32
+    \item Data: 1K samples
+\end{itemize}
+
+\vspace{0.3cm}
+
+\textbf{Phase 2: RL}
+\begin{itemize}
+    \item Generate N=10, Keep K=3
+    \item Target: Level 2 fusion
+\end{itemize}
+
+\vspace{0.3cm}
+
+\textbf{Extensions}
+\begin{itemize}
+    \item Multi-Input Testing
+    \item Staged Evaluation
+    \item Adaptive Curriculum
+    \item Calibrated Timing
+\end{itemize}
+
+\column{0.4\textwidth}
+\vspace{1cm}
+
+{\Large\textbf{Modular Design}}
+
+\vspace{0.3cm}
+
+Each extension independently toggleable
+
+\end{columns}
+
+\end{frame}
+
+% Training Loop
+\begin{frame}{Training Loop}
+
+\textbf{Five-step process per iteration:}
+
+\vspace{0.3cm}
+
+\begin{enumerate}
+    \item \textbf{Sample Task}: Level 1 (basic) or Level 2 (fusion)
+
+    \item \textbf{Generate Candidates}: N=10 with temperature sampling
+
+    \item \textbf{Extension Processing}:
+    \begin{itemize}
+        \item Multi-input: Generate 5 test cases
+        \item Staged eval: 5-stage filtering
+        \item Curriculum: Dynamic task sampling
+        \item Timing: Calibrated measurement
+    \end{itemize}
+
+    \item \textbf{Compute Rewards}: Correctness (0.7) + performance (0.3)
+
+    \item \textbf{Update Model}: Select top K=3, apply RL update
+\end{enumerate}
+
+\end{frame}
+
+% Section divider
+{
+\setbeamercolor{background canvas}{bg=BlackMain}
+\setbeamercolor{normal text}{fg=TextLight}
+\usebeamercolor[fg]{normal text}
+\begin{frame}[plain]
+\vspace{3cm}
+\begin{center}
+{\fontsize{42}{50}\selectfont\textbf{Extensions}}
+\end{center}
+\end{frame}
+}
+
+% Extension 1
+\begin{frame}{Extension 1: Multi-Input Testing}
+
+\begin{columns}[T]
+\column{0.5\textwidth}
+\textbf{Problem}
+
+Single test case allows overfitting
+
+\vspace{0.5cm}
+
+\textbf{Solution}
+
+Generate 5 diverse test inputs:
+\begin{enumerate}
+    \item Original input
+    \item Scaled values (×2.0)
+    \item Different random seed
+    \item Larger dimensions
+    \item Different precision
+\end{enumerate}
+
+\column{0.45\textwidth}
+\vspace{1cm}
+
+\textbf{Benefit}
+
+Catches edge cases that single input misses
+
+\end{columns}
+
+\end{frame}
+
+% Extension 2
+\begin{frame}{Extension 2: Staged Evaluation}
+
+\textbf{Problem:} Evaluating all candidates wastes compute
+
+\vspace{0.5cm}
+
+\textbf{Solution:} Five-stage funnel
+
+\vspace{0.3cm}
+
+\begin{tabular}{llll}
+\toprule
+\textbf{Stage} & \textbf{Check} & \textbf{Time} & \textbf{Reward} \\
+\midrule
+1 & AST syntax & ms & 0.0 \\
+2 & Compilation & sec & 0.3 \\
+3 & Tiny run (4×4) & sec & 0.5 \\
+4 & Full run & sec & 0.7 \\
+5 & Timing & min & 1.0 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5cm}
+
+\textbf{Benefit:} 35-40\% throughput improvement
+
+\end{frame}
+
+% Extension 3
+\begin{frame}{Extension 3: Adaptive Curriculum}
+
+\begin{columns}[T]
+\column{0.55\textwidth}
+\textbf{Problem}
+
+Fixed distribution forces premature hard task training
+
+\vspace{0.5cm}
+
+\textbf{Solution}
+
+Dynamic schedule:
+\begin{itemize}
+    \item Start: 10\% Level 2 tasks
+    \item Increase: Linearly to 50\% when Level 1 accuracy > 40\%
+    \item Logic: Build foundations before complexity
+\end{itemize}
+
+\column{0.4\textwidth}
+\vspace{1cm}
+
+\[
+\text{L2\%} = \begin{cases}
+0.1 + 0.4 \times \frac{\text{L1}}{0.4} \\
+\text{if L1} < 0.4 \\
+0.5 \text{ else}
+\end{cases}
+\]
+
+\end{columns}
+
+\end{frame}
+
+% Extension 4
+\begin{frame}{Extension 4: Calibrated Timing}
+
+\begin{columns}[T]
+\column{0.5\textwidth}
+\textbf{Problem}
+
+Single measurements have 15\% noise
+
+\vspace{0.5cm}
+
+\textbf{Solution}
+
+Statistical protocol:
+\begin{enumerate}
+    \item Warmup: 10 runs
+    \item Measurement: 50 trials
+    \item Aggregation: Trimmed mean
+\end{enumerate}
+
+\column{0.45\textwidth}
+\vspace{1cm}
+
+\textbf{Benefit}
+
+Reduced variance:\\
+15\% → 5\%
+
+\end{columns}
+
+\end{frame}
+
+% Section divider
+{
+\setbeamercolor{background canvas}{bg=BlackMain}
+\setbeamercolor{normal text}{fg=TextLight}
+\usebeamercolor[fg]{normal text}
+\begin{frame}[plain]
+\vspace{3cm}
+\begin{center}
+{\fontsize{42}{50}\selectfont\textbf{Results}}
+\end{center}
+\end{frame}
+}
+
+% Implementation
+\begin{frame}{Implementation}
+
+\begin{columns}[T]
+\column{0.48\textwidth}
+\textbf{Technology Stack}
+\begin{itemize}
+    \item Model: Qwen2.5-Coder-7B
+    \item Fine-tuning: LoRA (PEFT)
+    \item Quantization: 8-bit
+    \item Framework: PyTorch
+    \item Kernel DSL: Triton 2.1+
+\end{itemize}
+
+\vspace{0.5cm}
+
+\textbf{Dataset}
+\begin{itemize}
+    \item Training: 1,000 samples
+    \item Total available: 18K
+    \item Eval: 20 Level 2 fusion tasks
+\end{itemize}
+
+\column{0.48\textwidth}
+\textbf{Hardware}
+\begin{itemize}
+    \item SFT: 8× A100 40GB
+    \item RL: 1× A10G 24GB
+\end{itemize}
+
+\vspace{0.5cm}
+
+\textbf{Metrics}
+\begin{itemize}
+    \item Valid Rate
+    \item Compiled Rate
+    \item \textbf{Correct Rate} (primary)
+    \item Speedup vs PyTorch
+\end{itemize}
+
+\end{columns}
+
+\end{frame}
+
+% Results
+\begin{frame}{Results}
+
+\textbf{Training completed successfully:}
+\begin{itemize}
+    \item SFT loss: 0.757 → 0.199
+    \item RL: 10/10 tasks completed
+\end{itemize}
+
+\vspace{0.5cm}
+
+\textbf{Performance comparison:}
+
+\vspace{0.3cm}
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Task Level} & \textbf{Baseline} & \textbf{Ours} & \textbf{Difference} \\
+\midrule
+Level 1 (Basic) & 63\% & 15\% & -48\% \\
+Level 2 (Fusion) & 7\% & 3\% & -4\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{0.5cm}
+
+\textbf{Result:} Extensions did not improve over baseline
+
+\end{frame}
+
+% Why Underperformed
+\begin{frame}{Why Did We Underperform?}
+
+\textbf{Likely causes:}
+
+\vspace{0.3cm}
+
+\begin{enumerate}
+    \item \textbf{Limited training scale}
+    \begin{itemize}
+        \item 1,000 samples vs. full 18K dataset
+        \item Only 1 SFT epoch
+    \end{itemize}
+
+    \item \textbf{Extension interactions}
+    \begin{itemize}
+        \item Individual tests showed promise
+        \item Combined effect unclear
+    \end{itemize}
+
+    \item \textbf{Model selection}
+    \begin{itemize}
+        \item May not be optimal for Triton
+    \end{itemize}
+
+    \item \textbf{Evaluation pipeline bugs}
+    \begin{itemize}
+        \item Initial verifier issues
+    \end{itemize}
+\end{enumerate}
+
+\end{frame}
+
+% Section divider
+{
+\setbeamercolor{background canvas}{bg=BlackMain}
+\setbeamercolor{normal text}{fg=TextLight}
+\usebeamercolor[fg]{normal text}
+\begin{frame}[plain]
+\vspace{3cm}
+\begin{center}
+{\fontsize{42}{50}\selectfont\textbf{Takeaways}}
+\end{center}
+\end{frame}
+}
+
+% Lessons Learned
+\begin{frame}{Lessons Learned}
+
+\begin{enumerate}
+    \item \textbf{Output format brittleness}
+    \begin{itemize}
+        \item LLMs generate varied formats
+        \item Need robust parsing
+    \end{itemize}
+
+    \item \textbf{Configuration management}
+    \begin{itemize}
+        \item Path mismatches cause silent failures
+    \end{itemize}
+
+    \item \textbf{Iterative debugging}
+    \begin{itemize}
+        \item RL training requires multiple iterations
+        \item Expensive on cloud
+    \end{itemize}
+
+    \item \textbf{Verification before training}
+    \begin{itemize}
+        \item Dry runs catch bugs early
+    \end{itemize}
+\end{enumerate}
+
+\end{frame}
+
+% Key Takeaways
+\begin{frame}{Key Takeaways}
+
+\begin{enumerate}
+    \item \textbf{Theoretically sound ideas don't always work}
+    \begin{itemize}
+        \item Extensions were well-motivated but failed
+    \end{itemize}
+
+    \item \textbf{Limited budgets create ambiguity}
+    \begin{itemize}
+        \item Extensions hurt vs. insufficient training?
+    \end{itemize}
+
+    \item \textbf{Negative results are valuable}
+    \begin{itemize}
+        \item Validate on small scale first
+        \item Ablation studies critical
+    \end{itemize}
+
+    \item \textbf{Honest reporting matters}
+    \begin{itemize}
+        \item Failures teach as much as successes
+    \end{itemize}
+\end{enumerate}
+
+\end{frame}
+
+% Contributions
+\begin{frame}{Contributions}
+
+\begin{columns}[T]
+\column{0.48\textwidth}
+\textbf{What we achieved:}
+\begin{itemize}
+    \item Complete implementation
+    \item Full training pipeline
+    \item Honest negative results
+    \item Analysis of failures
+    \item Lessons for future work
+\end{itemize}
+
+\column{0.48\textwidth}
+\textbf{What we cannot claim:}
+\begin{itemize}
+    \item Extensions did NOT improve
+    \item No ablation studies
+    \item Cannot isolate root cause
+    \item Unclear: extensions vs. training
+\end{itemize}
+\end{columns}
+
+\vspace{0.7cm}
+
+\textbf{Value:} Negative results are contributions
+
+\end{frame}
+
+% Conclusion
+\begin{frame}{Conclusion}
+
+\textbf{Problem:} TritonRL achieves only 7\% on kernel fusion
+
+\vspace{0.3cm}
+
+\textbf{Approach:} Four modular extensions
+
+\vspace{0.3cm}
+
+\textbf{Result:} Training succeeded but underperformed baseline
+
+\vspace{0.3cm}
+
+\textbf{Likely cause:} Limited data/training + possible extension issues
+
+\vspace{0.5cm}
+
+\hrule
+
+\vspace{0.5cm}
+
+\textbf{Key message:} Theoretically sound extensions need validation. Small-scale testing and ablation studies are critical before scaling up.
+
+\end{frame}
+
+% Thank You - black background
+{
+\setbeamercolor{background canvas}{bg=BlackMain}
+\setbeamercolor{normal text}{fg=TextLight}
+\usebeamercolor[fg]{normal text}
+\begin{frame}[plain]
+\vspace{3cm}
+\begin{center}
+{\fontsize{48}{58}\selectfont\textbf{Thank You}}
+
+\vspace{1cm}
+
+{\large github.com/vanshajagrawal/beyondtritonrl}
+
+\vspace{1cm}
+
+{\fontsize{42}{50}\selectfont\textbf{Questions?}}
+\end{center}
+\end{frame}
+}
+
+\end{document}

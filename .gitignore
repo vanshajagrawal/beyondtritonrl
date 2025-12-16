@@ -76,3 +76,4 @@ dist/
 .ipynb_checkpoints/
 
 # Final repository cleanup
+checkpoints_backup/

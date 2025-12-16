@@ -180,24 +180,56 @@ Write an optimized Triton kernel."""
 
             # Extract generated code
             generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            # Remove the instruction part to get just the generated code
-            code_start = generated_text.find("```python")  # Look for code block start
-            if code_start != -1:
-                code = generated_text[code_start:]
-                # Extract just the Triton kernel code
-                code_lines = code.split('\n')
-                triton_code = []
-                in_code_block = False
-                for line in code_lines:
-                    if '```' in line:
-                        in_code_block = not in_code_block
-                        continue
+
+            # Remove the instruction part first to avoid extracting instruction code blocks
+            generated_only = generated_text[len(instruction):].strip()
+
+            # Look for code blocks in the generated part only
+            code_blocks = []
+            lines = generated_only.split('\n')
+            current_block = []
+            in_code_block = False
+
+            for line in lines:
+                if '```' in line:
                     if in_code_block:
-                        triton_code.append(line)
-                code = '\n'.join(triton_code)
+                        # End of code block
+                        if current_block:
+                            code_blocks.append('\n'.join(current_block))
+                        current_block = []
+                    in_code_block = not in_code_block
+                elif in_code_block:
+                    current_block.append(line)
+
+            # If we found code blocks, use the last one (most likely the generated code)
+            if code_blocks:
+                code = code_blocks[-1]
+            # Otherwise, look for Triton code markers in the generated text
+            elif '@triton.jit' in generated_only or 'import triton' in generated_only:
+                code = generated_only
             else:
-                # Fallback: extract everything after the instruction
-                code = generated_text[len(instruction):].strip()
+                # Fallback: use everything after instruction
+                code = generated_only
+
+            # Clean up the extracted code
+            # Remove any text before imports
+            lines = code.split('\n')
+            start_idx = 0
+            for i, line in enumerate(lines):
+                if line.strip().startswith('import ') or line.strip().startswith('from '):
+                    start_idx = i
+                    break
+
+            # Find where PyTorch Module wrapper starts (stop extracting there)
+            end_idx = len(lines)
+            for i in range(start_idx, len(lines)):
+                line = lines[i].strip()
+                # Stop if we hit a PyTorch module class or non-Triton code
+                if line.startswith('class ') and ('Module' in line or 'nn.Module' in line):
+                    end_idx = i
+                    break
+
+            code = '\n'.join(lines[start_idx:end_idx]).strip()
 
             # Evaluate with comprehensive error handling
             try:

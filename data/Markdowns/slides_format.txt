@@ -1,0 +1,9 @@
+Final course project presentation (Deadline: 12/15/25)
+Every team will submit an 8-10 minute recorded presentation on GradeScope. For the format and rubric, please refer to the following.
+
+Introduction and overview of your project: 4 points
+Problem: 3 points
+Related work: 3 points
+Method: 4 points
+Evaluation: 4 points
+Timed correctly: 2 points (8-10 minutes excluding QnA)

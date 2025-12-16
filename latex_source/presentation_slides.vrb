@@ -1,0 +1,29 @@
+\frametitle{System Design: Extension Module Interface}
+
+\begin{block}{Modular Design Pattern}
+\begin{lstlisting}
+# Base interface all extensions implement
+class Extension:
+    def __init__(self, config):
+        self.enabled = config.get('enabled', False)
+
+    def process(self, candidate, task):
+        if not self.enabled:
+            return candidate  # Pass-through
+        return self._apply(candidate, task)
+
+# Extensions stack independently
+extensions = [
+    MultiInputTesting(config),
+    StagedEvaluation(config),
+    AdaptiveCurriculum(config),
+    CalibratedTiming(config)
+]
+
+for ext in extensions:
+    candidate = ext.process(candidate, task)
+\end{lstlisting}
+\end{block}
+
+\textbf{Benefits:} Toggle independently • Easy to extend • Clean separation
+
