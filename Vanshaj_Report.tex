@@ -18,7 +18,7 @@
 % -------------------- Title -----------------------
 \begin{document}
 
-\title{Beyond TritonRL: Reinforcement Learning for Triton Kernel Optimization with Modular Extensions\\[0.8em]
+\title{Beyond TritonRL: Reinforcement Learning for Triton Kernel Optimization with Independent Extensions\\[0.8em]
 \large MS CSE Project Report}
 \author[1]{Vanshaj Agrawal}
 \affil[1]{Pennsylvania State University, MS CSE}
@@ -27,7 +27,7 @@
 \maketitle
 
 \begin{abstract}
-Machine learning system performance fundamentally depends on efficient GPU kernels. TritonRL uses reinforcement learning to generate Triton kernels from natural language descriptions, achieving 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). This work implements four modular extensions to address specific weaknesses: multi-input testing to prevent overfitting, staged evaluation for computational efficiency, adaptive curriculum learning for progressive difficulty, and calibrated timing to reduce measurement noise. Due to computational constraints, training used 200 samples (1.1\% of the full dataset) with 2 RL fusion tasks over \texttt{total\_time}. Training completed successfully with SFT loss decreasing from 0.757 to 0.199 and RL final loss of 0.17. Final evaluation on held-out test set achieved \texttt{level1\_acc}\% correctness on Level 1 tasks and \texttt{level2\_acc}\% on Level 2 fusion tasks. The limited training scale restricts comparison to the baseline system. This work provides methodological insights on sample efficiency versus verification rigor tradeoffs and the challenges of evaluating multi-component RL systems at limited scale.
+Machine learning system performance fundamentally depends on efficient GPU kernels. TritonRL uses reinforcement learning to generate Triton kernels from natural language descriptions, achieving 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). This work implements four independent extensions to address specific weaknesses: multi-input testing to prevent overfitting, staged evaluation for computational efficiency, adaptive curriculum learning for progressive difficulty, and calibrated timing to reduce measurement noise. Due to computational constraints, training used 200 samples (1.1\% of the full dataset) with 2 RL fusion tasks over \texttt{total\_time}. Training completed successfully with SFT loss decreasing from 0.757 to 0.199 and RL final loss of 0.17. Final evaluation on held-out test set achieved \texttt{level1\_acc}\% correctness on Level 1 tasks and \texttt{level2\_acc}\% on Level 2 fusion tasks. The limited training scale restricts comparison to the baseline system. This work provides methodological insights on sample efficiency versus verification rigor tradeoffs and the challenges of evaluating multi-component RL systems at limited scale.
 \end{abstract}
 
 % -------------------- Introduction --------------------
@@ -39,7 +39,7 @@ TritonRL~\cite{tritonrl} recently demonstrated that reinforcement learning can t
 
 \subsection{Problem Statement}
 
-This project investigates whether modular extensions targeting specific weaknesses can improve upon the TritonRL baseline. The work focuses on four research questions:
+This project investigates whether independent extensions targeting specific weaknesses can improve upon the TritonRL baseline. The work focuses on four research questions:
 
 \begin{enumerate}
     \item Can multi-input testing improve generalization beyond single test cases?
@@ -87,7 +87,7 @@ Four specific weaknesses are identified:
 
 \subsection{System Architecture}
 
-Our system follows TritonRL's two-phase training approach while introducing four independently toggleable extensions. This modular design enables future ablation studies to isolate individual contributions.
+Our system follows TritonRL's two-phase training approach while introducing four independently toggleable extensions. This independent design enables future ablation studies to isolate individual contributions.
 
 \subsubsection{Phase 1: Supervised Fine-Tuning}
 
@@ -214,7 +214,7 @@ The system implements a clean four-layer architecture:
     \item \textbf{Verification Pipeline:} Handles code extraction from model outputs, Triton compilation, test execution, and performance measurement. Implements all four extensions as plugins.
 \end{enumerate}
 
-This modular design was deliberate: it allows clear attribution of improvements or issues to specific components, assuming sufficient computational resources for systematic ablation studies (testing all $2^4 = 16$ possible extension combinations).
+This independent design was deliberate: it allows clear attribution of improvements or issues to specific components, assuming sufficient computational resources for systematic ablation studies (testing all $2^4 = 16$ possible extension combinations).
 
 % -------------------- Implementation --------------------
 \section{Implementation}
@@ -431,7 +431,7 @@ Partial credit schemes may flatten the reward landscape by giving similar reward
 
 \subsection{Summary}
 
-TritonRL baseline achieves 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). This work implements four modular extensions targeting specific weaknesses: multi-input testing, staged evaluation, adaptive curriculum, and calibrated timing.
+TritonRL baseline achieves 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). This work implements four independent extensions targeting specific weaknesses: multi-input testing, staged evaluation, adaptive curriculum, and calibrated timing.
 
 Training completed successfully: SFT loss decreased from 0.757 to 0.199 (50 steps, \texttt{sft\_time}), and RL training completed 2 fusion tasks with final loss 0.17 (\texttt{rl\_time}). Total training time: \texttt{total\_time}. Training used 200 samples (1.1\% of the 18K-sample dataset). Final evaluation on held-out test set achieved \texttt{level1\_acc}\% correctness on Level 1 tasks and \texttt{level2\_acc}\% on Level 2 fusion tasks.
 
@@ -441,7 +441,7 @@ The limited training scale restricts conclusions about extension effectiveness. 
 
 This work provides:
 \begin{itemize}
-    \item Complete implementation of four modular extensions
+    \item Complete implementation of four independent extensions
     \item Full training pipeline (SFT + RL) running end-to-end
     \item Analysis of confounding factors (sample size, training duration)
     \item Methodological lessons for RL-based code generation research
