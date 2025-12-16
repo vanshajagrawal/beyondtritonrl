@@ -27,7 +27,7 @@
 \maketitle
 
 \begin{abstract}
-Machine learning system performance fundamentally depends on efficient GPU kernels. TritonRL uses reinforcement learning to generate Triton kernels from natural language descriptions, achieving 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). We implemented four modular extensions to address specific weaknesses: multi-input testing to prevent overfitting, staged evaluation for computational efficiency, adaptive curriculum learning for progressive difficulty, and calibrated timing to reduce measurement noise. Due to computational and time constraints, we trained on 200 samples (1.1\% of the full dataset) with 2 RL fusion tasks over 20 minutes. Training completed successfully with SFT loss decreasing from 0.757 to 0.199 and RL final loss of 0.17. The limited training scale restricts comparison to the baseline system. We provide methodological insights on sample efficiency versus verification rigor tradeoffs and the challenges of evaluating multi-component RL systems at limited scale.
+Machine learning system performance fundamentally depends on efficient GPU kernels. TritonRL uses reinforcement learning to generate Triton kernels from natural language descriptions, achieving 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). This work implements four modular extensions to address specific weaknesses: multi-input testing to prevent overfitting, staged evaluation for computational efficiency, adaptive curriculum learning for progressive difficulty, and calibrated timing to reduce measurement noise. Due to computational and time constraints, training used 200 samples (1.1\% of the full dataset) with 2 RL fusion tasks over 20 minutes. Training completed successfully with SFT loss decreasing from 0.757 to 0.199 and RL final loss of 0.17. The limited training scale restricts comparison to the baseline system. This work provides methodological insights on sample efficiency versus verification rigor tradeoffs and the challenges of evaluating multi-component RL systems at limited scale.
 \end{abstract}
 
 % -------------------- Introduction --------------------
@@ -39,7 +39,7 @@ TritonRL~\cite{tritonrl} recently demonstrated that reinforcement learning can t
 
 \subsection{Problem Statement}
 
-This project investigates whether modular extensions targeting specific weaknesses can improve upon the TritonRL baseline. We focus on four research questions:
+This project investigates whether modular extensions targeting specific weaknesses can improve upon the TritonRL baseline. The work focuses on four research questions:
 
 \begin{enumerate}
     \item Can multi-input testing improve generalization beyond single test cases?
@@ -74,7 +74,7 @@ TritonRL~\cite{tritonrl} represents the current state-of-the-art for RL-based Tr
 
 \subsection{Gaps in the Baseline}
 
-We identify four specific weaknesses:
+Four specific weaknesses are identified:
 \begin{itemize}
     \item \textbf{Single-input testing:} Models can overfit to specific test cases rather than learning general correctness
     \item \textbf{Evaluate-all-candidates:} Computational resources wasted on obviously invalid kernels
@@ -91,7 +91,7 @@ Our system follows TritonRL's two-phase training approach while introducing four
 
 \subsubsection{Phase 1: Supervised Fine-Tuning}
 
-We fine-tune Qwen2.5-Coder-7B~\cite{qwen}, a state-of-the-art code generation model, on Triton kernel examples from the KernelBook dataset~\cite{kernelbench}. We use:
+The approach fine-tunes Qwen2.5-Coder-7B~\cite{qwen}, a state-of-the-art code generation model, on Triton kernel examples from the KernelBook dataset~\cite{kernelbench}. The training uses:
 \begin{itemize}
     \item LoRA (Low-Rank Adaptation)~\cite{lora} with rank r=16 for parameter efficiency
     \item 8-bit quantization to fit within GPU memory constraints
@@ -104,7 +104,7 @@ Training loss decreased from 0.757 to 0.199, indicating successful supervised le
 
 \subsubsection{Phase 2: Reinforcement Learning}
 
-Following SFT, we apply reinforcement learning to optimize for both correctness and performance. The RL phase uses:
+Following SFT, reinforcement learning is applied to optimize for both correctness and performance. The RL phase uses:
 \begin{itemize}
     \item Best-of-N sampling with N=10 candidates, keeping top K=3
     \item 2 Level 2 fusion tasks:
@@ -181,9 +181,9 @@ p(\text{Level 2}) = \begin{cases}
 \end{cases}
 \]
 
-We start with 10\% Level 2 tasks. As Level 1 accuracy improves toward 40\%, we linearly increase Level 2 proportion to 50\%. This progressive difficulty schedule allows the model to build strong foundations before tackling complex fusion tasks.
+The curriculum starts with 10\% Level 2 tasks. As Level 1 accuracy improves toward 40\%, the Level 2 proportion increases linearly to 50\%. This progressive difficulty schedule allows the model to build strong foundations before tackling complex fusion tasks.
 
-\textbf{Limitation:} With only 200 training samples and 20 minutes of training, we did not train long enough to observe curriculum effects.
+\textbf{Limitation:} With only 200 training samples and 20 minutes of training, the training was not long enough to observe curriculum effects.
 
 \subsection{Extension 4: Calibrated Timing}
 
@@ -239,7 +239,7 @@ Target DSL & Triton 2.1+ & GPU kernel language \\
 
 \subsection{Hardware}
 
-We used AWS EC2 p4d.24xlarge spot instances with:
+Training used AWS EC2 p4d.24xlarge spot instances with:
 \begin{itemize}
     \item 8× NVIDIA A100 40GB GPUs
     \item 96 vCPUs (AMD EPYC)
@@ -339,7 +339,7 @@ This creates a fundamental tradeoff in resource-constrained settings:
     \item \textbf{Option B:} 1,000+ samples with noisy single-input, single-measurement verification (baseline approach)
 \end{itemize}
 
-We chose Option A based on the hypothesis that sample quality matters more than quantity for RL. Whether Option B's higher sample diversity outweighs the noise depends on the model's capacity to average over noisy signals.
+Option A was chosen based on the hypothesis that sample quality matters more than quantity for RL. Whether Option B's higher sample diversity outweighs the noise depends on the model's capacity to average over noisy signals.
 
 \subsubsection{Extension Interactions}
 
@@ -420,9 +420,9 @@ Partial credit schemes may flatten the reward landscape by giving similar reward
 
 \subsection{Summary}
 
-TritonRL achieves only 7\% correctness on kernel fusion tasks (Level 2), despite 63\% on basic operations (Level 1). We implemented four modular extensions targeting specific weaknesses: multi-input testing, staged evaluation, adaptive curriculum, and calibrated timing.
+TritonRL achieves only 7\% correctness on kernel fusion tasks (Level 2), despite 63\% on basic operations (Level 1). This work implements four modular extensions targeting specific weaknesses: multi-input testing, staged evaluation, adaptive curriculum, and calibrated timing.
 
-Training completed successfully: SFT loss decreased from 0.757 to 0.199 in 5 minutes, and RL training completed 2 fusion tasks in 15 minutes with final loss 0.17. We trained on 200 samples (1.1\% of the 18K-sample dataset) for 20 minutes total, compared to likely hours of training at full scale for the baseline.
+Training completed successfully: SFT loss decreased from 0.757 to 0.199 in 5 minutes, and RL training completed 2 fusion tasks in 15 minutes with final loss 0.17. Training used 200 samples (1.1\% of the 18K-sample dataset) for 20 minutes total, compared to likely hours of training at full scale for the baseline.
 
 The limited training scale restricts conclusions about extension effectiveness. The experiments were not conducted at comparable scale to the baseline.
 
@@ -466,7 +466,7 @@ Methodological improvements:
 % -------------------- Acknowledgments --------------------
 \section*{Acknowledgments}
 
-I am grateful to the instructors and teaching staff for their guidance throughout this project. Special thanks to colleagues who provided technical feedback on verification infrastructure design and RL training protocols.
+The author thanks the instructors and teaching staff for their guidance throughout this project, and colleagues who provided technical feedback on verification infrastructure design and RL training protocols.
 
 % -------------------- Artifact --------------------
 \section*{Code Availability}
