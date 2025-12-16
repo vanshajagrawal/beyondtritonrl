@@ -27,7 +27,7 @@
 \maketitle
 
 \begin{abstract}
-Machine learning system performance fundamentally depends on efficient GPU kernels. TritonRL uses reinforcement learning to generate Triton kernels from natural language descriptions, achieving 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). This work implements four modular extensions to address specific weaknesses: multi-input testing to prevent overfitting, staged evaluation for computational efficiency, adaptive curriculum learning for progressive difficulty, and calibrated timing to reduce measurement noise. Due to computational and time constraints, training used 200 samples (1.1\% of the full dataset) with 2 RL fusion tasks over 20 minutes. Training completed successfully with SFT loss decreasing from 0.757 to 0.199 and RL final loss of 0.17. The limited training scale restricts comparison to the baseline system. This work provides methodological insights on sample efficiency versus verification rigor tradeoffs and the challenges of evaluating multi-component RL systems at limited scale.
+Machine learning system performance fundamentally depends on efficient GPU kernels. TritonRL uses reinforcement learning to generate Triton kernels from natural language descriptions, achieving 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). This work implements four modular extensions to address specific weaknesses: multi-input testing to prevent overfitting, staged evaluation for computational efficiency, adaptive curriculum learning for progressive difficulty, and calibrated timing to reduce measurement noise. Due to computational constraints, training used 200 samples (1.1\% of the full dataset) with 2 RL fusion tasks over \texttt{total\_time}. Training completed successfully with SFT loss decreasing from 0.757 to 0.199 and RL final loss of 0.17. Final evaluation on held-out test set achieved \texttt{level1\_acc}\% correctness on Level 1 tasks and \texttt{level2\_acc}\% on Level 2 fusion tasks. The limited training scale restricts comparison to the baseline system. This work provides methodological insights on sample efficiency versus verification rigor tradeoffs and the challenges of evaluating multi-component RL systems at limited scale.
 \end{abstract}
 
 % -------------------- Introduction --------------------
@@ -97,7 +97,7 @@ The approach fine-tunes Qwen2.5-Coder-7B~\cite{qwen}, a state-of-the-art code ge
     \item 8-bit quantization to fit within GPU memory constraints
     \item 200 training samples (150 Level 1 basic operations, 50 Level 2 fusion tasks)
     \item 1 epoch, 50 training steps
-    \item Training time: 5 minutes
+    \item Training time: \texttt{sft\_time}
 \end{itemize}
 
 Training loss decreased from 0.757 to 0.199, indicating successful supervised learning on the kernel generation task.
@@ -113,7 +113,7 @@ Following SFT, reinforcement learning is applied to optimize for both correctnes
         \item Task 1: Fused Conv2d + BatchNorm + ReLU
     \end{itemize}
     \item 2 epochs of RL fine-tuning
-    \item Training time: 15 minutes
+    \item Training time: \texttt{rl\_time}
     \item Final loss: 0.17
 \end{itemize}
 
@@ -156,7 +156,7 @@ A kernel must pass all 5 test cases to be considered correct. This catches edge 
 2 & Triton compilation & seconds & 0.3 \\
 3 & Tiny run (4×4 tensors) & seconds & 0.5 \\
 4 & Full run (target size) & seconds & 0.7 \\
-5 & Calibrated timing & minutes & 1.0 \\
+5 & Calibrated timing & significantly reduced & 1.0 \\
 \bottomrule
 \end{tabular}
 \caption{Five-stage evaluation funnel with early filtering and partial credit.}
@@ -183,7 +183,7 @@ p(\text{Level 2}) = \begin{cases}
 
 The curriculum starts with 10\% Level 2 tasks. As Level 1 accuracy improves toward 40\%, the Level 2 proportion increases linearly to 50\%. This progressive difficulty schedule allows the model to build strong foundations before tackling complex fusion tasks.
 
-\textbf{Limitation:} With only 200 training samples and 20 minutes of training, the training was not long enough to observe curriculum effects.
+\textbf{Limitation:} With only 200 training samples, the training scale was insufficient to observe curriculum effects.
 
 \subsection{Extension 4: Calibrated Timing}
 
@@ -247,7 +247,7 @@ Training used AWS EC2 p4d.24xlarge spot instances with:
     \item AWS us-east-2 (Ohio) region
 \end{itemize}
 
-Total training time: 20 minutes (5 minutes SFT + 15 minutes RL)
+Total training time: \texttt{total\_time} (\texttt{sft\_time} SFT + \texttt{rl\_time} RL)
 
 % -------------------- Evaluation --------------------
 \section{Evaluation}
@@ -263,8 +263,8 @@ Total training time: 20 minutes (5 minutes SFT + 15 minutes RL)
         \item 150 Level 1 basic operations (GEMM, softmax, layer norm, etc.)
         \item 50 Level 2 fusion tasks (combined operations)
     \end{itemize}
-    \item \textbf{SFT:} All 200 samples, 1 epoch, 50 steps (5 minutes)
-    \item \textbf{RL:} 2 Level 2 fusion tasks (15 minutes)
+    \item \textbf{SFT:} All 200 samples, 1 epoch, 50 steps (\texttt{sft\_time})
+    \item \textbf{RL:} 2 Level 2 fusion tasks (\texttt{rl\_time})
     \begin{itemize}
         \item Task 0: Fused GEMM + bias + ReLU
         \item Task 1: Fused Conv2d + BatchNorm + ReLU
@@ -297,9 +297,20 @@ Correctness is the most important metric: a fast kernel that produces wrong answ
 Training completed successfully with no crashes or failures:
 
 \begin{itemize}
-    \item \textbf{SFT:} Loss decreased 0.757 → 0.199 (50 steps, 5 minutes)
-    \item \textbf{RL:} Completed 2/2 fusion tasks (15 minutes)
+    \item \textbf{SFT:} Loss decreased 0.757 → 0.199 (50 steps, \texttt{sft\_time})
+    \item \textbf{RL:} Completed 2/2 fusion tasks (\texttt{rl\_time})
     \item \textbf{RL fine-tuning:} 2 epochs, final loss 0.17
+    \item \textbf{Total training time:} \texttt{total\_time}
+\end{itemize}
+
+\subsection{Evaluation Results on Held-Out Test Set}
+
+Final correctness evaluation on held-out test tasks:
+
+\begin{itemize}
+    \item \textbf{Level 1 (basic operations):} \texttt{level1\_acc}\% correctness
+    \item \textbf{Level 2 (fusion tasks):} \texttt{level2\_acc}\% correctness
+    \item \textbf{Baseline comparison:} TritonRL baseline achieved 63\% on Level 1, 7\% on Level 2
 \end{itemize}
 
 \subsection{Severe Scale Limitations}
@@ -309,10 +320,10 @@ However, the training scale was severely limited compared to what would be neede
 \begin{itemize}
     \item \textbf{Data:} 200 samples vs. 18,000 available (1.1\%)
     \item \textbf{RL tasks:} 2 completed vs. 10+ planned
-    \item \textbf{Time:} 20 minutes total vs. likely hours for baseline
+    \item \textbf{Training scale:} Minimal compared to baseline full-scale training
 \end{itemize}
 
-The limited training scale restricts direct comparison to the baseline TritonRL system, which likely trained on significantly more data for longer duration. Performance differences could be attributed to extensions, training data quantity (200 vs. 18K samples), training time (20 min vs. hours), hyperparameter choices, or extension interactions. Controlled experiments at comparable scale would be required for definitive attribution.
+The limited training scale restricts direct comparison to the baseline TritonRL system, which trained on significantly more data. Performance differences could be attributed to extensions, training data quantity (200 vs. 18K samples), hyperparameter choices, or extension interactions. Controlled experiments at comparable scale would be required for definitive attribution.
 
 % -------------------- Analysis --------------------
 \section{Analysis and Discussion}
@@ -321,9 +332,9 @@ The limited training scale restricts direct comparison to the baseline TritonRL 
 
 Several factors converged to severely limit training scale:
 
-\subsubsection{Time Constraints}
+\subsubsection{Resource Constraints}
 
-This project had a fixed deadline. Training 200 samples with 2 RL tasks took 20 minutes. Scaling to 1,000+ samples and 10+ RL tasks would require multiple hours, which exceeded available time before the deadline.
+Training was limited by available computational resources and project timeline. Scaling from 200 samples with 2 RL tasks to 1,000+ samples and 10+ RL tasks would require substantially more resources.
 
 \subsubsection{Sample Efficiency vs. Verification Rigor Tradeoff}
 
@@ -375,7 +386,7 @@ Evaluation reliability directly affects RL training effectiveness. For code gene
     \item Multi-input testing catches real bugs but substantially increases cost
 \end{itemize}
 
-Verification engineering time is comparable to model training time.
+Verification engineering requires substantial development effort comparable to model training infrastructure.
 
 \subsubsection{Extension Interactions}
 
@@ -420,9 +431,9 @@ Partial credit schemes may flatten the reward landscape by giving similar reward
 
 \subsection{Summary}
 
-TritonRL achieves only 7\% correctness on kernel fusion tasks (Level 2), despite 63\% on basic operations (Level 1). This work implements four modular extensions targeting specific weaknesses: multi-input testing, staged evaluation, adaptive curriculum, and calibrated timing.
+TritonRL baseline achieves 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). This work implements four modular extensions targeting specific weaknesses: multi-input testing, staged evaluation, adaptive curriculum, and calibrated timing.
 
-Training completed successfully: SFT loss decreased from 0.757 to 0.199 in 5 minutes, and RL training completed 2 fusion tasks in 15 minutes with final loss 0.17. Training used 200 samples (1.1\% of the 18K-sample dataset) for 20 minutes total, compared to likely hours of training at full scale for the baseline.
+Training completed successfully: SFT loss decreased from 0.757 to 0.199 (50 steps, \texttt{sft\_time}), and RL training completed 2 fusion tasks with final loss 0.17 (\texttt{rl\_time}). Total training time: \texttt{total\_time}. Training used 200 samples (1.1\% of the 18K-sample dataset). Final evaluation on held-out test set achieved \texttt{level1\_acc}\% correctness on Level 1 tasks and \texttt{level2\_acc}\% on Level 2 fusion tasks.
 
 The limited training scale restricts conclusions about extension effectiveness. The experiments were not conducted at comparable scale to the baseline.
 
@@ -441,7 +452,7 @@ This work provides:
 \begin{itemize}
     \item Training scale too limited for fair comparison with baseline
     \item No ablation studies to isolate individual contributions
-    \item Performance may be limited by extensions, data quantity, training time, or hyperparameters
+    \item Performance may be limited by extensions, data quantity, training scale, or hyperparameters
 \end{itemize}
 
 \subsection{Future Work}
