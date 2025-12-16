@@ -91,7 +91,7 @@ Our system follows TritonRL's two-phase training approach while introducing four
 
 \subsubsection{Phase 1: Supervised Fine-Tuning}
 
-The approach fine-tunes Qwen2.5-Coder-7B~\cite{qwen}, a state-of-the-art code generation model, on Triton kernel examples from the KernelBook dataset~\cite{kernelbench}. The training uses:
+The approach fine-tunes Qwen2.5-Coder-7B~\cite{qwen}, a state-of-the-art code generation model, on Triton kernel examples from the KernelBook dataset~\cite{kernelbook}. The training uses:
 \begin{itemize}
     \item LoRA (Low-Rank Adaptation)~\cite{lora} with rank r=16 for parameter efficiency
     \item 8-bit quantization to fit within GPU memory constraints
@@ -257,7 +257,7 @@ Total training time: \texttt{total\_time} (\texttt{sft\_time} SFT + \texttt{rl\_
 \subsubsection{Training Data (What Model Saw)}
 
 \begin{itemize}
-    \item \textbf{Source:} KernelBook dataset~\cite{kernelbench} (18,000 total kernel implementations)
+    \item \textbf{Source:} KernelBook dataset~\cite{kernelbook} (18,000 total kernel implementations)
     \item \textbf{Used:} 200 samples (1.1\% of full dataset)
     \begin{itemize}
         \item 150 Level 1 basic operations (GEMM, softmax, layer norm, etc.)
@@ -495,10 +495,15 @@ Anonymous.
 \emph{TritonRL: Training LLMs to Think and Code Triton Without Cheating}.
 OpenReview, ICLR 2026 Conference Submission, 19 Sept. 2025. \url{https://openreview.net/forum?id=feJ5T9sFSJ}. Accessed 16 Dec. 2025.
 
+\bibitem{kernelbook}
+Paliskara, Sahan and Saroufim, Mark.
+\emph{KernelBook}.
+2025. \url{https://huggingface.co/datasets/GPUMODE/KernelBook}.
+
 \bibitem{kernelbench}
-Anonymous.
-\emph{KernelBench: Evaluating LLM-Generated GPU Kernels}.
-Benchmark suite with Level 1/2/3 tasks, 2024.
+Ouyang, Anne, Guo, Simon, Arora, Simran, Zhang, Alex L., Hu, William, Ré, Christopher, and Mirhoseini, Azalia.
+\emph{KernelBench: Can LLMs Write Efficient GPU Kernels?}
+arXiv preprint arXiv:2502.10517, 2025. \url{https://arxiv.org/abs/2502.10517}.
 
 \bibitem{qwen}
 Qwen Team.
