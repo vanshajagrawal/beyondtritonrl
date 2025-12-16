@@ -313,7 +313,7 @@ Final correctness evaluation on held-out test tasks:
     \item \textbf{Baseline comparison:} TritonRL baseline achieved 63\% on Level 1, 7\% on Level 2
 \end{itemize}
 
-\subsection{Severe Scale Limitations}
+\subsection{Scale Limitations}
 
 However, the training scale was severely limited compared to what would be needed for fair comparison:
 
@@ -323,7 +323,7 @@ However, the training scale was severely limited compared to what would be neede
     \item \textbf{Training scale:} Minimal compared to baseline full-scale training
 \end{itemize}
 
-The limited training scale restricts direct comparison to the baseline TritonRL system, which trained on significantly more data. Performance differences could be attributed to extensions, training data quantity (200 vs. 18K samples), hyperparameter choices, or extension interactions. Controlled experiments at comparable scale would be required for definitive attribution.
+The limited training scale restricts direct comparison to the baseline TritonRL system, which trained on significantly more data. Performance differences could be attributed to extensions, training data quantity (200 vs. 18K samples), hyperparameter choices, or extension interactions. Controlled experiments at comparable scale are needed for definitive attribution.
 
 % -------------------- Analysis --------------------
 \section{Analysis and Discussion}
@@ -360,7 +360,7 @@ While extensions were designed to be independent, they may interact negatively w
     \item Multi-input testing with curriculum learning may over-penalize early attempts at Level 2 tasks
 \end{itemize}
 
-Ablation studies testing each extension individually and in combination (16 configurations) would be needed to isolate whether specific extensions help, hurt, or interact poorly.
+Testing all 16 extension configurations would isolate whether specific extensions help, hurt, or interact poorly.
 
 \subsubsection{Pipeline Development Overhead}
 
@@ -386,7 +386,7 @@ Evaluation reliability directly affects RL training effectiveness. For code gene
     \item Multi-input testing catches real bugs but substantially increases cost
 \end{itemize}
 
-Verification engineering requires substantial development effort comparable to model training infrastructure.
+Verification engineering took substantial development effort, comparable to the model training infrastructure.
 
 \subsubsection{Extension Interactions}
 
@@ -397,7 +397,7 @@ Extensions that are independently implemented may still interact negatively when
     \item Curriculum learning may delay exposure to important task types
 \end{itemize}
 
-With 4 binary extensions, establishing causal attribution requires testing $2^4 = 16$ configurations systematically.
+With 4 binary extensions, establishing causal attribution needs all $2^4 = 16$ configurations tested.
 
 \subsubsection{Sample Efficiency vs. Verification Rigor}
 
@@ -414,7 +414,7 @@ The optimal operating point depends on:
     \item Whether RL algorithms can effectively average over noisy rewards
 \end{itemize}
 
-Which regime RL for code generation occupies remains an open research question.
+This question remains open for RL code generation.
 
 \subsubsection{Reward Signal Dilution in Staged Systems}
 
