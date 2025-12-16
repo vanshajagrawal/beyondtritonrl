@@ -1,0 +1,578 @@
+% Minimalistic Beamer Presentation
+\documentclass[aspectratio=169,11pt]{beamer}
+
+% Minimal Theme
+\usetheme{default}
+\usecolortheme{default}
+
+% OpenAI-inspired color palette - stark white with minimal accents
+\definecolor{PureWhite}{RGB}{255,255,255}       % Pure white background
+\definecolor{DarkText}{RGB}{0,0,0}              % Pure black for text
+\definecolor{AccentGreen}{RGB}{16,163,127}      % OpenAI green accent
+\definecolor{LightGray}{RGB}{250,250,250}       % Very light gray for subtle blocks
+
+\setbeamercolor{background canvas}{bg=PureWhite}
+\setbeamercolor{normal text}{fg=DarkText}
+\setbeamercolor{structure}{fg=DarkText}
+\setbeamercolor{frametitle}{bg=PureWhite,fg=DarkText}
+\setbeamercolor{block title}{bg=LightGray,fg=DarkText}
+\setbeamercolor{block body}{bg=PureWhite,fg=DarkText}
+\setbeamercolor{itemize item}{fg=AccentGreen}
+\setbeamercolor{enumerate item}{fg=DarkText}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{
+  \hfill
+  \usebeamerfont{page number in head/foot}
+  \insertframenumber/\inserttotalframenumber
+  \hspace{0.3cm}
+  \vspace{0.35cm}
+}
+\setbeamertemplate{itemize items}[circle]
+\setbeamertemplate{frametitle}{
+  \vspace{0.8cm}
+  \nointerlineskip
+  \begin{center}
+  \begin{beamercolorbox}[wd=0.9\paperwidth,center]{frametitle}
+    \usebeamerfont{frametitle}\insertframetitle
+  \end{beamercolorbox}
+  \end{center}
+  \vspace{0.3cm}
+}
+
+% Packages
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{calc}
+
+% Modern fonts - Helvetica Neue (clean, modern sans-serif)
+\usepackage{fontspec}
+\setsansfont{Helvetica Neue}
+\usefonttheme{professionalfonts}
+\renewcommand{\familydefault}{\sfdefault}
+\setbeamerfont{title}{size=\LARGE,series=\bfseries}
+\setbeamerfont{frametitle}{size=\Large,series=\bfseries}
+\setbeamerfont{block title}{size=\normalsize,series=\bfseries}
+
+% Add stylish black border frame
+\setbeamertemplate{background}{
+  \begin{tikzpicture}[remember picture,overlay]
+    \draw[line width=2pt,black]
+      ($(current page.north west)+(0.2cm,-0.2cm)$) rectangle
+      ($(current page.south east)+(-0.2cm,0.2cm)$);
+  \end{tikzpicture}
+}
+
+% Code listing style - minimal
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=none,
+  language=Python,
+  showstringspaces=false,
+  backgroundcolor=\color{LightGray}
+}
+
+% Title information
+\title{Beyond TritonRL: Reinforcement Learning for \\ Triton Kernel Optimization with Modular Extensions}
+\author{Vanshaj Agrawal}
+\institute{}
+\date{December 15, 2025}
+
+\begin{document}
+
+% Title slide
+\begin{frame}
+\titlepage
+\end{frame}
+
+% Introduction
+\begin{frame}{Introduction}
+
+\textbf{Problem:} ML system performance depends on efficient GPU kernels
+
+\vspace{0.5cm}
+
+\textbf{Current approach:} TritonRL uses RL to generate Triton kernels
+\begin{itemize}
+    \item 63\% correctness on basic operations (Level 1)
+    \item Only 7\% correctness on kernel fusion tasks (Level 2)
+\end{itemize}
+
+\vspace{0.5cm}
+
+\textbf{Our goal:} Improve performance with four modular extensions
+
+\end{frame}
+
+% Problem Statement
+\begin{frame}{Problem Statement}
+
+\textbf{Research Questions:}
+\begin{enumerate}
+    \item Can multi-input testing improve generalization?
+    \item Does staged evaluation improve training efficiency?
+    \item Can adaptive curriculum help with complex fusion tasks?
+    \item Does timing calibration reduce noise?
+\end{enumerate}
+
+\vspace{0.5cm}
+
+\textbf{Task:} Given natural language + PyTorch reference → Generate correct Triton kernel
+
+\vspace{0.3cm}
+
+\textbf{Challenge:} Level 2 fusion tasks (fused GEMM+bias, Conv+BatchNorm+ReLU)
+
+\end{frame}
+
+% Related Work
+\begin{frame}{Related Work}
+
+\begin{tabular}{ll}
+\toprule
+\textbf{Area} & \textbf{Approach} \\
+\midrule
+Kernel optimization & TVM, Ansor (search-based) \\
+RL for code & AlphaCode, CodeRL \\
+Baseline & TritonRL (SFT + RL, best-of-N) \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.7cm}
+
+\textbf{Our improvements over baseline:}
+\begin{itemize}
+    \item Multi-input testing vs. single test case
+    \item Staged evaluation vs. evaluate all candidates
+    \item Adaptive curriculum vs. fixed task distribution
+    \item Calibrated timing vs. single measurement
+\end{itemize}
+
+\end{frame}
+
+% System Architecture
+\begin{frame}{System Architecture}
+
+\begin{center}
+\small
+\begin{tabular}{l}
+\textbf{Phase 1: SFT} (Qwen2.5-Coder-7B, LoRA r=16, 1K samples) \\[0.3cm]
+$\downarrow$ \\[0.2cm]
+\textbf{Phase 2: RL} (N=10, K=3, Level 2 fusion) \\[0.3cm]
+$\downarrow$ \\[0.2cm]
+\textbf{Extensions:} Multi-Input | Staged Eval | Curriculum | Timing \\[0.3cm]
+$\downarrow$ \\[0.2cm]
+\textbf{Reward} [0.0 -- 1.0]
+\end{tabular}
+\end{center}
+
+\vspace{0.5cm}
+
+\textbf{Key design:} Four independently toggleable, modular extensions
+
+\end{frame}
+
+% Component Architecture
+\begin{frame}{System Components}
+
+\textbf{Four-layer architecture:}
+
+\vspace{0.3cm}
+
+\begin{enumerate}
+    \item \textbf{Model Layer}: Qwen2.5-Coder-7B with 8-bit quantization, LoRA adapters
+
+    \item \textbf{Training Orchestrator}: SFT + RL coordination, multi-GPU (8× A100)
+
+    \item \textbf{Extension Manager}: Config-driven, independent module loading
+
+    \item \textbf{Verification Pipeline}: Code extraction, compilation, testing, timing
+\end{enumerate}
+
+\vspace{0.5cm}
+
+All extensions are independently toggleable via configuration
+
+\end{frame}
+
+% Data Flow
+\begin{frame}{Training Loop}
+
+\textbf{Five-step process per iteration:}
+
+\vspace{0.3cm}
+
+\begin{enumerate}
+    \item \textbf{Sample Task}: Level 1 (basic) or Level 2 (fusion)
+
+    \item \textbf{Generate Candidates}: N=10 with temperature sampling
+
+    \item \textbf{Extension Processing}:
+    \begin{itemize}
+        \item Multi-input: Generate 5 test cases
+        \item Staged eval: 5-stage filtering
+        \item Curriculum: Dynamic task sampling
+        \item Timing: Calibrated measurement
+    \end{itemize}
+
+    \item \textbf{Compute Rewards}: Correctness (0.7) + performance (0.3)
+
+    \item \textbf{Update Model}: Select top K=3, apply RL update
+\end{enumerate}
+
+\end{frame}
+
+% Extension 1
+\begin{frame}{Extension 1: Multi-Input Testing}
+
+\textbf{Problem:} Single test case allows overfitting
+
+\vspace{0.5cm}
+
+\textbf{Solution:} Generate 5 diverse test inputs
+\begin{enumerate}
+    \item Original input
+    \item Scaled values (×2.0)
+    \item Different random seed
+    \item Larger dimensions
+    \item Different precision
+\end{enumerate}
+
+\vspace{0.5cm}
+
+\textbf{Benefit:} Catches edge cases
+
+\end{frame}
+
+% Extension 2
+\begin{frame}{Extension 2: Staged Evaluation}
+
+\textbf{Problem:} Evaluating all candidates wastes compute
+
+\vspace{0.4cm}
+
+\textbf{Solution:} Five-stage funnel with early filtering
+
+\vspace{0.25cm}
+
+\begin{tabular}{llll}
+\toprule
+\textbf{Stage} & \textbf{Check} & \textbf{Time} & \textbf{Reward} \\
+\midrule
+1 & AST syntax & milliseconds & 0.0 \\
+2 & Compilation & seconds & 0.3 \\
+3 & Tiny run (4×4) & seconds & 0.5 \\
+4 & Full run & seconds & 0.7 \\
+5 & Timing & minutes & 1.0 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.35cm}
+
+\textbf{Benefit:} 35-40\% throughput improvement (unit tests)
+
+\end{frame}
+
+% Extension 3
+\begin{frame}{Extension 3: Adaptive Curriculum}
+
+\textbf{Problem:} Fixed distribution forces premature hard task training
+
+\vspace{0.5cm}
+
+\textbf{Solution:} Dynamic schedule
+\begin{itemize}
+    \item Start: 10\% Level 2 tasks
+    \item Increase: Linearly to 50\% when Level 1 accuracy $>$ 40\%
+    \item Logic: Build foundations before complexity
+\end{itemize}
+
+\vspace{0.3cm}
+
+\[
+\text{Level 2 \%} = \begin{cases}
+0.1 + 0.4 \times (\text{L1\_acc} / 0.4) & \text{if L1\_acc} < 0.4 \\
+0.5 & \text{otherwise}
+\end{cases}
+\]
+
+\end{frame}
+
+% Extension 4
+\begin{frame}{Extension 4: Calibrated Timing}
+
+\textbf{Problem:} Single measurements have 15\% noise
+
+\vspace{0.5cm}
+
+\textbf{Solution:} Statistical measurement protocol
+\begin{enumerate}
+    \item Warmup: 10 runs to stabilize GPU
+    \item Measurement: 50 trials with CUDA events
+    \item Aggregation: Trimmed mean (remove 10\% outliers)
+\end{enumerate}
+
+\vspace{0.5cm}
+
+\textbf{Benefit:} Reduced variance from 15\% to 5\%
+
+\end{frame}
+
+% Implementation
+\begin{frame}{Implementation Stack}
+
+\begin{tabular}{lll}
+\toprule
+\textbf{Layer} & \textbf{Technology} & \textbf{Rationale} \\
+\midrule
+Model & Qwen2.5-Coder-7B & SOTA code generation \\
+Fine-tuning & LoRA (PEFT) & Memory-efficient \\
+Quantization & 8-bit & Fit on 40GB A100 \\
+Framework & PyTorch, Transformers & Standard tools \\
+Kernel DSL & Triton 2.1+ & Target language \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.7cm}
+
+\textbf{Hardware:}
+\begin{itemize}
+    \item 8× A100 40GB (p4d.24xlarge spot instance)
+    \item AWS us-east-2 (Ohio)
+    \item Used for both SFT and RL training
+\end{itemize}
+
+\end{frame}
+
+% Evaluation: Datasets and Protocol
+\begin{frame}{Evaluation: Datasets and Protocol}
+\footnotesize
+
+\textbf{Training Data (What Model Saw):}
+\begin{itemize}
+    \item Source: KernelBook dataset (18K total)
+    \item Used: \textbf{200 samples} (1.1\% of dataset) - 150 L1, 50 L2
+    \item SFT: All 200 samples, 1 epoch, 50 steps (5 min)
+    \item RL: \textbf{2 Level 2 fusion tasks} (15 min)
+    \begin{itemize}
+        \item Task 0: Fused GEMM + bias + ReLU
+        \item Task 1: Fused Conv2d + BatchNorm + ReLU
+    \end{itemize}
+\end{itemize}
+
+\textbf{Evaluation Data (Held-Out Test Set):}
+\begin{itemize}
+    \item Source: KernelBench suite
+    \item Test set: Tasks 100-119 (20 Level 2 fusion kernels)
+    \item Why held-out? Training used tasks 0-1, avoids data leakage
+\end{itemize}
+
+\textbf{Primary Metric:} Correct Rate (correctness matters most)
+
+\end{frame}
+
+% Results
+\begin{frame}{Results: Partial Success}
+\footnotesize
+
+\textbf{Training completed successfully:}
+\begin{itemize}
+    \item SFT loss: 0.757 → 0.199 (50 steps, 5 minutes)
+    \item RL: 2/2 fusion tasks completed (15 minutes)
+    \item RL fine-tuning: 2 epochs, loss → 0.17
+    \item No crashes or failures
+\end{itemize}
+
+\vspace{0.2cm}
+
+\textbf{But severely limited by scale:}
+\begin{itemize}
+    \item Only \textbf{200 samples} (1.1\% of full dataset)
+    \item Only \textbf{2 RL tasks} (vs. planned 10+)
+    \item Total training: \textbf{20 minutes} (vs. likely hours for baseline)
+\end{itemize}
+
+\vspace{0.2cm}
+
+\textbf{Result:} Cannot make fair comparison to baseline
+\begin{itemize}
+    \item Evaluation running on held-out test set (tasks 100-119)
+    \item Limited scale makes attribution impossible
+\end{itemize}
+
+\end{frame}
+
+% Why Limited Scale?
+\begin{frame}{Why Such Limited Scale?}
+\footnotesize
+
+\textbf{Factors that converged:}
+
+\vspace{0.2cm}
+
+\begin{enumerate}
+    \item \textbf{Severely limited training scale}
+    \begin{itemize}
+        \item Used \textbf{200 samples} vs. full 18K (1.1\%)
+        \item Only \textbf{1 SFT epoch} vs. likely 3-5 for baseline
+        \item Only \textbf{2 RL tasks} vs. 10+ planned
+        \item Training: \textbf{20 min} vs. likely hours for baseline
+    \end{itemize}
+
+    \item \textbf{Sample efficiency vs. verification rigor tradeoff}
+    \begin{itemize}
+        \item Multi-input (5×) + timing (50×) increase per-sample cost
+        \item 200 high-quality samples vs. 1000+ noisier samples
+        \item Unclear which regime is optimal for RL code generation
+    \end{itemize}
+
+    \item \textbf{Extension interactions} (cannot isolate without ablations)
+
+    \item \textbf{Pipeline development overhead}
+\end{enumerate}
+
+\vspace{0.15cm}
+
+Cannot determine if extensions help or hurt at this scale
+
+\end{frame}
+
+% Lessons Learned
+\begin{frame}{Lessons Learned: Scientific Research Insights}
+\footnotesize
+
+\begin{enumerate}
+    \item \textbf{Verification infrastructure as first-class component}
+    \begin{itemize}
+        \item Evaluation reliability bounds what can be learned from RL
+        \item Verification bugs introduce noise that can dominate signals
+    \end{itemize}
+
+    \item \textbf{Composability ≠ Modularity}
+    \begin{itemize}
+        \item Extensions may interact negatively when combined
+        \item Reward shaping from multiple sources → gradient conflicts
+        \item Ablation studies necessary, not optional
+    \end{itemize}
+
+    \item \textbf{Sample efficiency vs. verification rigor tradeoff}
+    \begin{itemize}
+        \item Extensions adding robustness increase cost 5-10×
+        \item Fewer diverse samples vs. more noisy samples
+        \item Optimal point depends on model capacity and task complexity
+    \end{itemize}
+
+    \item \textbf{Reward signal dilution in staged systems}
+    \begin{itemize}
+        \item Partial credit may flatten reward landscape
+        \item Alternative: binary correctness + curriculum over difficulty
+    \end{itemize}
+\end{enumerate}
+
+\end{frame}
+
+% Key Takeaways
+\begin{frame}{Key Takeaways}
+\small
+
+\begin{enumerate}
+    \item \textbf{Theoretical motivation ≠ Empirical validation}
+    \begin{itemize}
+        \item Well-reasoned extensions can fail (or need more training)
+        \item None definitively validated at our limited scale
+    \end{itemize}
+
+    \item \textbf{Limited compute creates attribution ambiguity}
+    \begin{itemize}
+        \item Cannot distinguish: extensions hurt vs. insufficient training
+        \item Requires full-scale training with ablations to resolve
+    \end{itemize}
+
+    \item \textbf{Ablation studies are not optional}
+    \begin{itemize}
+        \item Modular design enables but doesn't replace ablations
+        \item Need to isolate contributions (2⁴ = 16 configurations)
+    \end{itemize}
+
+    \item \textbf{Negative results have value}
+    \begin{itemize}
+        \item Identified sample efficiency vs. rigor tradeoff
+        \item Demonstrated composability needs systematic study
+    \end{itemize}
+\end{enumerate}
+
+\end{frame}
+
+% Contributions
+\begin{frame}{Contributions Summary}
+\footnotesize
+
+\textbf{What we achieved:}
+\begin{itemize}
+    \item Complete implementation of 4 modular extensions
+    \item Full training pipeline (SFT + RL)
+    \item Analysis of confounding factors (sample size, duration)
+    \item Methodological lessons for RL-based code generation
+\end{itemize}
+
+\textbf{What we cannot claim:}
+\begin{itemize}
+    \item Extensions did NOT improve (training scale too limited)
+    \item No ablation studies (cannot isolate contributions)
+    \item Unclear if performance limited by: extensions, insufficient data (200 vs 18K), training duration (20 min vs hours), or hyperparameters
+\end{itemize}
+
+\end{frame}
+
+% Conclusion
+\begin{frame}{Conclusion}
+\footnotesize
+
+\textbf{Problem:} TritonRL achieves only 7\% on kernel fusion
+
+\vspace{0.2cm}
+
+\textbf{Approach:} Four modular extensions targeting specific weaknesses
+
+\vspace{0.2cm}
+
+\textbf{Result:} Training succeeded but severely limited by scale
+\begin{itemize}
+    \item 200 samples (1.1\% of dataset)
+    \item 2 RL tasks (vs. planned 10+)
+    \item 20 minutes (vs. likely hours for baseline)
+\end{itemize}
+
+\vspace{0.2cm}
+
+\textbf{Value:} Methodological insights even without performance gains
+\begin{itemize}
+    \item Identified sample efficiency vs. rigor tradeoff
+    \item Demonstrated need for ablation studies before scaling
+\end{itemize}
+
+\vspace{0.2cm}
+
+\textbf{Future work:} Full-scale training (18K samples, 10+ RL tasks, ablations)
+
+\end{frame}
+
+% Thank You
+\begin{frame}[plain]
+\begin{center}
+\vspace{3cm}
+{\Large \textbf{Thank You}}
+
+\vspace{2cm}
+
+\textbf{Code:} github.com/vanshajagrawal/beyondtritonrl
+
+\end{center}
+\end{frame}
+
+\end{document}

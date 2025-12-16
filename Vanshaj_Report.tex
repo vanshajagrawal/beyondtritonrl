@@ -1,0 +1,522 @@
+\documentclass[11pt]{article}
+
+% -------------------- Packages --------------------
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{authblk}
+\usepackage{xurl}
+\urlstyle{same}
+
+% -------------------- Title -----------------------
+\begin{document}
+
+\title{Beyond TritonRL: Reinforcement Learning for Triton Kernel Optimization with Modular Extensions\\[0.8em]
+\large Project Report}
+\author{Vanshaj Agrawal}
+\affil{vmagrawa@andrew.cmu.edu}
+\affil{Carnegie Mellon University}
+\date{December 15, 2025}
+\maketitle
+
+\begin{abstract}
+Machine learning system performance fundamentally depends on efficient GPU kernels. TritonRL uses reinforcement learning to generate Triton kernels from natural language descriptions, achieving 63\% correctness on basic operations (Level 1) but only 7\% on kernel fusion tasks (Level 2). We implemented four modular extensions to address specific weaknesses: multi-input testing to prevent overfitting, staged evaluation for computational efficiency, adaptive curriculum learning for progressive difficulty, and calibrated timing to reduce measurement noise. Due to computational and time constraints, we trained on 200 samples (1.1\% of the full dataset) with 2 RL fusion tasks over 20 minutes. Training completed successfully with SFT loss decreasing from 0.757 to 0.199 and RL final loss of 0.17. The limited training scale restricts comparison to the baseline system. We provide methodological insights on sample efficiency versus verification rigor tradeoffs and the challenges of evaluating multi-component RL systems at limited scale.
+\end{abstract}
+
+% -------------------- Introduction --------------------
+\section{Introduction}
+
+Machine learning system performance depends critically on efficient GPU kernel implementations. The gap between theoretical peak performance and achieved throughput often stems from suboptimal kernel design. Triton, a Python-based domain-specific language for GPU programming, offers more accessibility than CUDA while maintaining performance, but writing efficient Triton kernels still requires expert knowledge.
+
+TritonRL~\cite{tritonrl} recently demonstrated that reinforcement learning can train language models to generate Triton kernels from natural language descriptions. Their approach combines supervised fine-tuning (SFT) with reinforcement learning using best-of-N sampling, achieving 63\% correctness on basic operations (KernelBench Level 1) but only 7\% on more complex kernel fusion tasks (Level 2).
+
+\subsection{Problem Statement}
+
+This project investigates whether modular extensions targeting specific weaknesses can improve upon the TritonRL baseline. We focus on four research questions:
+
+\begin{enumerate}
+    \item Can multi-input testing improve generalization beyond single test cases?
+    \item Does staged evaluation with early filtering improve training efficiency?
+    \item Can adaptive curriculum learning help with complex fusion tasks?
+    \item Does calibrated timing measurement reduce noise in the reward signal?
+\end{enumerate}
+
+The core task is: given a natural language description and PyTorch reference implementation, generate a functionally correct and performant Triton kernel. The challenge is particularly acute for Level 2 fusion tasks (e.g., fused GEMM+bias+ReLU, Conv2d+BatchNorm+ReLU) where multiple operations must be efficiently combined.
+
+% -------------------- Related Work --------------------
+\section{Related Work}
+
+\subsection{Kernel Optimization}
+
+Traditional approaches to kernel optimization rely on search-based methods. TVM~\cite{tvm} and Ansor~\cite{ansor} use auto-tuning to explore large search spaces of possible implementations. These approaches achieve strong performance but require substantial computational resources and domain-specific optimizations.
+
+\subsection{RL for Code Generation}
+
+Recent work demonstrates that reinforcement learning can effectively guide code generation. AlphaCode~\cite{alphacode} applies RL to competitive programming problems. CodeRL~\cite{coderl} uses program execution feedback as rewards. These approaches show that execution-based feedback provides stronger learning signals than supervised learning alone.
+
+\subsection{TritonRL Baseline}
+
+TritonRL~\cite{tritonrl} represents the current state-of-the-art for RL-based Triton kernel generation. It uses:
+\begin{itemize}
+    \item Supervised fine-tuning on expert-written kernels
+    \item Best-of-N sampling during RL (N=10, K=3)
+    \item Correctness-focused rewards with performance bonuses
+    \item Single test case per task for verification
+    \item Fixed task distribution between Level 1 and Level 2
+\end{itemize}
+
+\subsection{Gaps in the Baseline}
+
+We identify four specific weaknesses:
+\begin{itemize}
+    \item \textbf{Single-input testing:} Models can overfit to specific test cases rather than learning general correctness
+    \item \textbf{Evaluate-all-candidates:} Computational resources wasted on obviously invalid kernels
+    \item \textbf{Fixed task distribution:} Complex tasks introduced too early, before fundamentals are solid
+    \item \textbf{Noisy timing:} Single measurements have ~15\% variance, destabilizing RL training
+\end{itemize}
+
+% -------------------- Method --------------------
+\section{Method}
+
+\subsection{System Architecture}
+
+Our system follows TritonRL's two-phase training approach while introducing four independently toggleable extensions. This modular design enables future ablation studies to isolate individual contributions.
+
+\subsubsection{Phase 1: Supervised Fine-Tuning}
+
+We fine-tune Qwen2.5-Coder-7B~\cite{qwen}, a state-of-the-art code generation model, on Triton kernel examples from the KernelBook dataset~\cite{kernelbench}. We use:
+\begin{itemize}
+    \item LoRA (Low-Rank Adaptation)~\cite{lora} with rank r=16 for parameter efficiency
+    \item 8-bit quantization to fit within GPU memory constraints
+    \item 200 training samples (150 Level 1 basic operations, 50 Level 2 fusion tasks)
+    \item 1 epoch, 50 training steps
+    \item Training time: 5 minutes
+\end{itemize}
+
+Training loss decreased from 0.757 to 0.199, indicating successful supervised learning on the kernel generation task.
+
+\subsubsection{Phase 2: Reinforcement Learning}
+
+Following SFT, we apply reinforcement learning to optimize for both correctness and performance. The RL phase uses:
+\begin{itemize}
+    \item Best-of-N sampling with N=10 candidates, keeping top K=3
+    \item 2 Level 2 fusion tasks:
+    \begin{itemize}
+        \item Task 0: Fused GEMM + bias + ReLU
+        \item Task 1: Fused Conv2d + BatchNorm + ReLU
+    \end{itemize}
+    \item 2 epochs of RL fine-tuning
+    \item Training time: 15 minutes
+    \item Final loss: 0.17
+\end{itemize}
+
+The reward function combines correctness (weight 0.7) and performance (weight 0.3):
+\[
+r = 0.7 \cdot \mathbb{1}[\text{correct}] + 0.3 \cdot \text{speedup\_score}
+\]
+
+\subsection{Extension 1: Multi-Input Testing}
+
+\textbf{Problem:} Single test cases allow models to overfit to specific input patterns rather than learning general correctness principles.
+
+\textbf{Solution:} Generate 5 diverse test inputs per kernel:
+\begin{enumerate}
+    \item Original input from task specification
+    \item Scaled values (multiply by 2.0)
+    \item Different random seed for initialization
+    \item Larger tensor dimensions
+    \item Different precision (e.g., float32 vs. float16)
+\end{enumerate}
+
+A kernel must pass all 5 test cases to be considered correct. This catches edge cases in data-dependent branches, boundary conditions, and numerical precision handling.
+
+\textbf{Tradeoff:} Increases per-sample evaluation cost by 5×.
+
+\subsection{Extension 2: Staged Evaluation}
+
+\textbf{Problem:} Evaluating all N=10 candidates through expensive compilation and timing wastes compute on clearly invalid kernels.
+
+\textbf{Solution:} Five-stage evaluation funnel with early filtering:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+\textbf{Stage} & \textbf{Check} & \textbf{Time} & \textbf{Partial Reward} \\
+\midrule
+1 & AST syntax validation & milliseconds & 0.0 \\
+2 & Triton compilation & seconds & 0.3 \\
+3 & Tiny run (4×4 tensors) & seconds & 0.5 \\
+4 & Full run (target size) & seconds & 0.7 \\
+5 & Calibrated timing & minutes & 1.0 \\
+\bottomrule
+\end{tabular}
+\caption{Five-stage evaluation funnel with early filtering and partial credit.}
+\end{table}
+
+Candidates failing any stage receive partial credit based on the furthest stage reached, then are filtered from subsequent stages. This prevents expensive operations on low-quality candidates while still providing learning signal.
+
+\textbf{Benefit:} Unit tests showed 35-40\% throughput improvement by filtering syntactically invalid and non-compiling candidates before expensive execution stages.
+
+\textbf{Tradeoff:} Partial credit may flatten the reward landscape, potentially reducing learning signal strength.
+
+\subsection{Extension 3: Adaptive Curriculum}
+
+\textbf{Problem:} Fixed task distribution exposes the model to complex fusion tasks (Level 2) before it has mastered fundamentals (Level 1), potentially overwhelming capacity.
+
+\textbf{Solution:} Dynamic task sampling schedule that adapts to model capability:
+
+\[
+p(\text{Level 2}) = \begin{cases}
+0.1 + 0.4 \times \frac{\text{L1\_accuracy}}{0.4} & \text{if L1\_accuracy} < 0.4 \\
+0.5 & \text{otherwise}
+\end{cases}
+\]
+
+We start with 10\% Level 2 tasks. As Level 1 accuracy improves toward 40\%, we linearly increase Level 2 proportion to 50\%. This progressive difficulty schedule allows the model to build strong foundations before tackling complex fusion tasks.
+
+\textbf{Limitation:} With only 200 training samples and 20 minutes of training, we did not train long enough to observe curriculum effects.
+
+\subsection{Extension 4: Calibrated Timing}
+
+\textbf{Problem:} Single GPU timing measurements exhibit ~15\% coefficient of variation due to thermal effects, scheduling variance, and cache state. This noise destabilizes RL training by providing inconsistent reward signals for identical kernels.
+
+\textbf{Solution:} Statistical measurement protocol:
+\begin{enumerate}
+    \item \textbf{Warmup:} 10 runs to stabilize GPU thermal state and populate caches
+    \item \textbf{Measurement:} 50 timed trials using CUDA events for microsecond precision
+    \item \textbf{Aggregation:} Trimmed mean, removing top and bottom 10\% of measurements as outliers
+\end{enumerate}
+
+\textbf{Benefit:} Reduced coefficient of variation from 15\% to 5\%, providing more reliable performance signals for RL.
+
+\textbf{Tradeoff:} Increases per-sample timing cost by 50×.
+
+\subsection{Component Architecture}
+
+The system implements a clean four-layer architecture:
+
+\begin{enumerate}
+    \item \textbf{Model Layer:} Qwen2.5-Coder-7B with 8-bit quantization and LoRA adapters (r=16). Handles token generation and gradient updates.
+
+    \item \textbf{Training Orchestrator:} Coordinates SFT and RL phases across 8× A100 GPUs. Manages distributed training, checkpointing, and learning rate scheduling.
+
+    \item \textbf{Extension Manager:} Configuration-driven module loader. Each extension can be independently enabled/disabled via YAML config, enabling future ablation studies without code changes.
+
+    \item \textbf{Verification Pipeline:} Handles code extraction from model outputs, Triton compilation, test execution, and performance measurement. Implements all four extensions as plugins.
+\end{enumerate}
+
+This modular design was deliberate: it allows clear attribution of improvements or issues to specific components, assuming sufficient computational resources for systematic ablation studies (testing all $2^4 = 16$ possible extension combinations).
+
+% -------------------- Implementation --------------------
+\section{Implementation}
+
+\subsection{Technology Stack}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Component} & \textbf{Technology} & \textbf{Rationale} \\
+\midrule
+Base Model & Qwen2.5-Coder-7B & State-of-the-art code generation \\
+Fine-tuning & LoRA (PEFT) & Memory-efficient, fits 40GB A100 \\
+Quantization & 8-bit & Enables larger batch sizes \\
+Framework & PyTorch, Transformers & Standard deep learning tools \\
+Target DSL & Triton 2.1+ & GPU kernel language \\
+\bottomrule
+\end{tabular}
+\caption{Technology choices and rationale}
+\end{table}
+
+\subsection{Hardware}
+
+We used AWS EC2 p4d.24xlarge spot instances with:
+\begin{itemize}
+    \item 8× NVIDIA A100 40GB GPUs
+    \item 96 vCPUs (AMD EPYC)
+    \item 1.1 TB system memory
+    \item AWS us-east-2 (Ohio) region
+\end{itemize}
+
+Total training time: 20 minutes (5 minutes SFT + 15 minutes RL)
+
+% -------------------- Evaluation --------------------
+\section{Evaluation}
+
+\subsection{Datasets and Protocol}
+
+\subsubsection{Training Data (What Model Saw)}
+
+\begin{itemize}
+    \item \textbf{Source:} KernelBook dataset~\cite{kernelbench} (18,000 total kernel implementations)
+    \item \textbf{Used:} 200 samples (1.1\% of full dataset)
+    \begin{itemize}
+        \item 150 Level 1 basic operations (GEMM, softmax, layer norm, etc.)
+        \item 50 Level 2 fusion tasks (combined operations)
+    \end{itemize}
+    \item \textbf{SFT:} All 200 samples, 1 epoch, 50 steps (5 minutes)
+    \item \textbf{RL:} 2 Level 2 fusion tasks (15 minutes)
+    \begin{itemize}
+        \item Task 0: Fused GEMM + bias + ReLU
+        \item Task 1: Fused Conv2d + BatchNorm + ReLU
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Evaluation Data (Held-Out Test Set)}
+
+\begin{itemize}
+    \item \textbf{Source:} KernelBench suite~\cite{kernelbench}
+    \item \textbf{Test set:} Tasks 100-119 (20 Level 2 fusion kernels)
+    \item \textbf{Why held-out?} Training used tasks 0-1, ensuring no data leakage and measuring true generalization rather than memorization
+\end{itemize}
+
+\subsection{Metrics}
+
+\textbf{Primary metric:} Correctness rate - percentage of generated kernels producing correct outputs compared to PyTorch reference implementations.
+
+\textbf{Secondary metrics:}
+\begin{itemize}
+    \item Valid rate: syntactically valid Triton code
+    \item Compiled rate: successfully compiles
+    \item Speedup: performance relative to PyTorch baseline
+\end{itemize}
+
+Correctness is the most important metric: a fast kernel that produces wrong answers is worthless in production.
+
+\subsection{Training Results}
+
+Training completed successfully with no crashes or failures:
+
+\begin{itemize}
+    \item \textbf{SFT:} Loss decreased 0.757 → 0.199 (50 steps, 5 minutes)
+    \item \textbf{RL:} Completed 2/2 fusion tasks (15 minutes)
+    \item \textbf{RL fine-tuning:} 2 epochs, final loss 0.17
+\end{itemize}
+
+\subsection{Severe Scale Limitations}
+
+However, the training scale was severely limited compared to what would be needed for fair comparison:
+
+\begin{itemize}
+    \item \textbf{Data:} 200 samples vs. 18,000 available (1.1\%)
+    \item \textbf{RL tasks:} 2 completed vs. 10+ planned
+    \item \textbf{Time:} 20 minutes total vs. likely hours for baseline
+\end{itemize}
+
+The limited training scale restricts direct comparison to the baseline TritonRL system, which likely trained on significantly more data for longer duration. Performance differences could be attributed to extensions, training data quantity (200 vs. 18K samples), training time (20 min vs. hours), hyperparameter choices, or extension interactions. Controlled experiments at comparable scale would be required for definitive attribution.
+
+% -------------------- Analysis --------------------
+\section{Analysis and Discussion}
+
+\subsection{Why Such Limited Scale?}
+
+Several factors converged to severely limit training scale:
+
+\subsubsection{Time Constraints}
+
+This project had a fixed deadline. Training 200 samples with 2 RL tasks took 20 minutes. Scaling to 1,000+ samples and 10+ RL tasks would require multiple hours, which exceeded available time before the deadline.
+
+\subsubsection{Sample Efficiency vs. Verification Rigor Tradeoff}
+
+Our extensions increase per-sample evaluation cost substantially:
+\begin{itemize}
+    \item Multi-input testing: 5× cost (run 5 test cases instead of 1)
+    \item Calibrated timing: 50× cost (50 trials + warmup instead of 1)
+\end{itemize}
+
+This creates a fundamental tradeoff in resource-constrained settings:
+\begin{itemize}
+    \item \textbf{Option A:} 200 high-quality samples with robust verification
+    \item \textbf{Option B:} 1,000+ samples with noisy single-input, single-measurement verification (baseline approach)
+\end{itemize}
+
+We chose Option A based on the hypothesis that sample quality matters more than quantity for RL. Whether Option B's higher sample diversity outweighs the noise depends on the model's capacity to average over noisy signals.
+
+\subsubsection{Extension Interactions}
+
+While extensions were designed to be independent, they may interact negatively when combined:
+\begin{itemize}
+    \item Staged evaluation's partial credit + performance bonuses from timing = reward shaping from multiple sources potentially creates conflicting gradients
+    \item Multi-input testing with curriculum learning may over-penalize early attempts at Level 2 tasks
+\end{itemize}
+
+Ablation studies testing each extension individually and in combination (16 configurations) would be needed to isolate whether specific extensions help, hurt, or interact poorly.
+
+\subsubsection{Pipeline Development Overhead}
+
+Significant time was spent building the verification infrastructure:
+\begin{itemize}
+    \item Robust code extraction from model outputs
+    \item Triton compilation error handling
+    \item Test case generation for multi-input
+    \item Statistical timing measurement protocols
+    \item Curriculum scheduling logic
+\end{itemize}
+
+This infrastructure is reusable for future work but reduced time available for actual training runs.
+
+\subsection{Lessons Learned}
+
+\subsubsection{Verification Infrastructure as First-Class Component}
+
+Evaluation reliability directly affects RL training effectiveness. For code generation tasks:
+\begin{itemize}
+    \item Parser robustness must match production compilers
+    \item Verification bugs introduce measurement noise that can dominate learning signals
+    \item Multi-input testing catches real bugs but substantially increases cost
+\end{itemize}
+
+Verification engineering time is comparable to model training time.
+
+\subsubsection{Extension Interactions}
+
+Extensions that are independently implemented may still interact negatively when enabled together:
+\begin{itemize}
+    \item Reward shaping from multiple sources can create conflicting gradients
+    \item Staged evaluation's partial credit may flatten the reward landscape
+    \item Curriculum learning may delay exposure to important task types
+\end{itemize}
+
+With 4 binary extensions, establishing causal attribution requires testing $2^4 = 16$ configurations systematically.
+
+\subsubsection{Sample Efficiency vs. Verification Rigor}
+
+Extensions that add robustness or precision increase per-sample cost 5-10× (multi-input) or even 50× (calibrated timing). In resource-constrained regimes, this creates a fundamental choice:
+\begin{itemize}
+    \item Fewer samples with high-quality, robust verification
+    \item More samples with noisy, single-measurement verification
+\end{itemize}
+
+The optimal operating point depends on:
+\begin{itemize}
+    \item Model capacity to learn from noisy vs. clean signals
+    \item Task complexity and diversity needs
+    \item Whether RL algorithms can effectively average over noisy rewards
+\end{itemize}
+
+Which regime RL for code generation occupies remains an open research question.
+
+\subsubsection{Reward Signal Dilution in Staged Systems}
+
+Partial credit schemes may flatten the reward landscape by giving similar rewards to "nearly correct" kernels and fully correct kernels. Alternative hypothesis worth testing:
+\begin{itemize}
+    \item Use binary correctness rewards (0 or 1, no partial credit)
+    \item Apply curriculum over task difficulty instead
+    \item This may provide sharper gradients for learning
+\end{itemize}
+
+
+% -------------------- Conclusion --------------------
+\section{Conclusion}
+
+\subsection{Summary}
+
+TritonRL achieves only 7\% correctness on kernel fusion tasks (Level 2), despite 63\% on basic operations (Level 1). We implemented four modular extensions targeting specific weaknesses: multi-input testing, staged evaluation, adaptive curriculum, and calibrated timing.
+
+Training completed successfully: SFT loss decreased from 0.757 to 0.199 in 5 minutes, and RL training completed 2 fusion tasks in 15 minutes with final loss 0.17. We trained on 200 samples (1.1\% of the 18K-sample dataset) for 20 minutes total, compared to likely hours of training at full scale for the baseline.
+
+The limited training scale restricts conclusions about extension effectiveness. The experiments were not conducted at comparable scale to the baseline.
+
+\subsection{Contributions}
+
+This work provides:
+\begin{itemize}
+    \item Complete implementation of four modular extensions
+    \item Full training pipeline (SFT + RL) running end-to-end
+    \item Analysis of confounding factors (sample size, training duration)
+    \item Methodological lessons for RL-based code generation research
+\end{itemize}
+
+\subsection{Limitations}
+
+\begin{itemize}
+    \item Training scale too limited for fair comparison with baseline
+    \item No ablation studies to isolate individual contributions
+    \item Performance may be limited by extensions, data quantity, training time, or hyperparameters
+\end{itemize}
+
+\subsection{Future Work}
+
+Immediate next steps:
+\begin{enumerate}
+    \item \textbf{Full-scale training:} Use complete 18K-sample dataset with 10+ RL tasks
+    \item \textbf{Systematic ablations:} Test all 16 extension configurations independently
+    \item \textbf{Sample efficiency study:} Compare "many noisy samples" vs. "few robust samples" explicitly
+    \item \textbf{Extension refinement:} Based on ablation results, keep helpful extensions and remove harmful ones
+\end{enumerate}
+
+Methodological improvements:
+\begin{itemize}
+    \item Test binary correctness rewards vs. partial credit schemes
+    \item Investigate learned speed proxies to reduce timing cost
+    \item Study extension interaction effects systematically
+    \item Develop better curriculum scheduling policies
+\end{itemize}
+
+
+% -------------------- Acknowledgments --------------------
+\section*{Acknowledgments}
+
+I am grateful to the instructors and teaching staff for their guidance throughout this project. Special thanks to colleagues who provided technical feedback on verification infrastructure design and RL training protocols.
+
+% -------------------- Artifact --------------------
+\section*{Code Availability}
+
+Implementation, training scripts, and evaluation code:\\
+\href{https://github.com/vanshajagrawal/beyondtritonrl}{\url{https://github.com/vanshajagrawal/beyondtritonrl}}
+
+% -------------------- Bibliography ----------------
+\begin{thebibliography}{9}
+
+\bibitem{tritonrl}
+Anonymous.
+\emph{TritonRL: Training LLMs to Think and Code Triton Without Cheating}.
+OpenReview, ICLR 2026 Conference Submission, 19 Sept. 2025. \url{https://openreview.net/forum?id=feJ5T9sFSJ}. Accessed 16 Dec. 2025.
+
+\bibitem{kernelbench}
+Anonymous.
+\emph{KernelBench: Evaluating LLM-Generated GPU Kernels}.
+Benchmark suite with Level 1/2/3 tasks, 2024.
+
+\bibitem{qwen}
+Qwen Team.
+\emph{Qwen2.5-Coder: Technical Report}.
+Alibaba Cloud, 2024.
+
+\bibitem{lora}
+Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., and Chen, W.
+\emph{LoRA: Low-Rank Adaptation of Large Language Models}.
+ICLR 2022.
+
+\bibitem{tvm}
+Chen, T., Moreau, T., Jiang, Z., Zheng, L., Yan, E., Shen, H., Cowan, M., Wang, L., Hu, Y., Ceze, L., Guestrin, C., and Krishnamurthy, A.
+\emph{TVM: An Automated End-to-End Optimizing Compiler for Deep Learning}.
+OSDI 2018.
+
+\bibitem{ansor}
+Zheng, L., Jia, C., Sun, M., Wu, Z., Yu, C. H., Haj-Ali, A., Wang, Y., Yang, J., Zhuo, D., Sen, K., Gonzalez, J. E., and Stoica, I.
+\emph{Ansor: Generating High-Performance Tensor Programs for Deep Learning}.
+OSDI 2020.
+
+\bibitem{alphacode}
+Li, Y., Choi, D., Chung, J., Kushman, N., Schrittwieser, J., Leblond, R., Eccles, T., Keeling, J., Gimeno, F., Dal Lago, A., et al.
+\emph{Competition-level code generation with AlphaCode}.
+Science, 378(6624):1092-1097, 2022.
+
+\bibitem{coderl}
+Le, H., Wang, Y., Gotmare, A. D., Savarese, S., and Hoi, S. C. H.
+\emph{CodeRL: Mastering Code Generation through Pretrained Models and Deep Reinforcement Learning}.
+NeurIPS 2022.
+
+\end{thebibliography}
+
+\end{document}
